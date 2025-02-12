@@ -5,14 +5,14 @@ Public API
    :toctree: _autosummary
    :recursive:
 
-   foundry.core
-   foundry.data
-   foundry.datasets
-   foundry.diffusion
-   foundry.env
-   foundry.graphics
-   foundry.policy
-   foundry.runtime
-   foundry.solver
-   foundry.train
-   foundry.util
+   argon.core
+   argon.data
+   argon.datasets
+   argon.diffusion
+   argon.env
+   argon.graphics
+   argon.policy
+   argon.runtime
+   argon.solver
+   argon.train
+   argon.util

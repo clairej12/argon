@@ -1,7 +1,7 @@
 Getting Started
 ===============
 
-Adding foundry to Your Project
+Adding argon to Your Project
 -----------------------------
 
 We recommend using `PDM <https://pdm-project.org/>`_ to manage your project's dependencies.
@@ -19,22 +19,22 @@ Make sure to choose "yes" when pdm asks if the project should be "built for dist
 .. warning::
    If you select "no" the ``launch`` script may not be able to find your main module.
 
-1. Adding foundry as a git submodule
+1. Adding argon as a git submodule
 """""""""""""""""""""""""""""""""""
 
-   git submodule add git@github.com:pfrommerd/foundry.git
+   git submodule add git@github.com:pfrommerd/argon.git
 
-   pdm add ./foundry
+   pdm add ./argon
 
-2. Adding foundry as a git dependency
+2. Adding argon as a git dependency
 """"""""""""""""""""""""""""""""""""
 
-   pdm add "foundry @ git+https://github.com/pfrommerd/foundry.git"
+   pdm add "argon @ git+https://github.com/pfrommerd/argon.git"
 
 Development
 -----------
 
-We use `PDM <https://pdm-project.org/>`_ to manage foundry.
+We use `PDM <https://pdm-project.org/>`_ to manage argon.
 
 1. Install Python 3.10 or later
 2. Install PDM

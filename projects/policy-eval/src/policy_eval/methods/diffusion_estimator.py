@@ -1,27 +1,27 @@
 from ..common import Result, Inputs, DataConfig
 
-from foundry.core import tree
-from foundry.diffusion import DDPMSchedule
-from foundry.random import PRNGSequence
-from foundry.policy import PolicyInput, PolicyOutput
-from foundry.policy.transforms import ChunkingTransform
+from argon.core import tree
+from argon.diffusion import DDPMSchedule
+from argon.random import PRNGSequence
+from argon.policy import PolicyInput, PolicyOutput
+from argon.policy.transforms import ChunkingTransform
 
-from foundry.env.core import Environment
+from argon.env.core import Environment
 
-from foundry.core.dataclasses import dataclass
-from foundry.diffusion import nonparametric
+from argon.core.dataclasses import dataclass
+from argon.diffusion import nonparametric
 
-from foundry.policy import Policy
-from foundry.env.core import ObserveConfig
-from foundry.env.mujoco.pusht import PushTAgentPos
-from foundry.env.mujoco.robosuite import EEfPose
+from argon.policy import Policy
+from argon.env.core import ObserveConfig
+from argon.env.mujoco.pusht import PushTAgentPos
+from argon.env.mujoco.robosuite import EEfPose
 
 from typing import Callable
 
-import foundry.util
+import argon.util
 
 import jax
-import foundry.numpy as jnp
+import argon.numpy as jnp
 import logging
 logger = logging.getLogger(__name__)
 

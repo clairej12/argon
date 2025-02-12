@@ -1,30 +1,30 @@
-from foundry import core as F
-from foundry import numpy as jnp
-from foundry import graphics
+from argon import core as F
+from argon import numpy as jnp
+from argon import graphics
 
 import jax
 
-import foundry.util.serialize
-import foundry.random
-import foundry.train.reporting
-import foundry.train.wandb
-import foundry.datasets.env
+import argon.util.serialize
+import argon.random
+import argon.train.reporting
+import argon.train.wandb
+import argon.datasets.env
 import wandb
 
-from foundry.data.sequence import Chunk
-from foundry.datasets.core import DatasetRegistry
-from foundry.core.dataclasses import dataclass
-from foundry.core.typing import Array
-from foundry.core import tree
-from foundry.random import PRNGSequence
-from foundry.env.core import (
+from argon.data.sequence import Chunk
+from argon.datasets.core import DatasetRegistry
+from argon.core.dataclasses import dataclass
+from argon.core.typing import Array
+from argon.core import tree
+from argon.random import PRNGSequence
+from argon.env.core import (
     Environment, ObserveConfig,
     ImageActionsRender
 )
-from foundry.train.reporting import Video
+from argon.train.reporting import Video
 
-from foundry.env.mujoco.robosuite import EEfPose
-from foundry.env.mujoco.pusht import PushTAgentPos
+from argon.env.mujoco.robosuite import EEfPose
+from argon.env.mujoco.pusht import PushTAgentPos
 
 from .methods.behavior_cloning import BCConfig
 from .methods.diffusion_estimator import EstimatorConfig
@@ -102,8 +102,8 @@ class Config:
 
 @F.jit
 def policy_rollout(env, T, x0, rng_key, policy):
-    r_policy, r_env = foundry.random.split(rng_key)
-    rollout = foundry.policy.rollout(
+    r_policy, r_env = argon.random.split(rng_key)
+    rollout = argon.policy.rollout(
         env.step, x0,
         policy, observe=env.observe,
         model_rng_key=r_env,
@@ -132,7 +132,7 @@ def validate(env, T, render_width, render_height,
         render_width, render_height
     )
     N = tree.axis_size(x0s, 0)
-    rngs = foundry.random.split(rng_key, N)
+    rngs = argon.random.split(rng_key, N)
 
     rollouts, rewards = F.vmap(rollout_fn)(x0s, rngs)
 
@@ -174,11 +174,11 @@ def run(config: Config):
     # ---- set up the random number generators ----
 
     # split the master RNG into train, eval
-    train_key, eval_key = foundry.random.split(foundry.random.key(config.seed))
+    train_key, eval_key = argon.random.split(argon.random.key(config.seed))
 
     # fold in the seeds for the train, eval
-    train_key = foundry.random.fold_in(train_key, config.train_seed)
-    eval_key = foundry.random.fold_in(eval_key, config.eval_seed)
+    train_key = argon.random.fold_in(train_key, config.train_seed)
+    eval_key = argon.random.fold_in(eval_key, config.eval_seed)
 
     # ---- set up the training data -----
     env, splits = config.data_config.load({"validation"})
@@ -236,12 +236,12 @@ def run(config: Config):
             },
             "final_validation_demonstrations": video
         }
-        metrics, reportables = foundry.train.reporting.as_log_dict(outputs)
+        metrics, reportables = argon.train.reporting.as_log_dict(outputs)
         for k, v in metrics.items():
             logger.info(f"{k}: {v}")
         wandb_run.summary.update(metrics)
         wandb_run.log({
-            k: foundry.train.wandb.map_reportable(v)
+            k: argon.train.wandb.map_reportable(v)
             for (k,v) in reportables.items()
         })
         if inputs.bucket_url is not None:

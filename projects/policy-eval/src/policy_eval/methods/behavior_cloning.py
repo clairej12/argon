@@ -1,22 +1,22 @@
 from ..common import Sample, Inputs, Result, DataConfig
 from typing import Callable
 
-import foundry.core as F
-from foundry.core import tree
-from foundry.random import PRNGSequence
-from foundry.policy import Policy, PolicyInput, PolicyOutput
-from foundry.policy.transforms import ChunkingTransform
+import argon.core as F
+from argon.core import tree
+from argon.random import PRNGSequence
+from argon.policy import Policy, PolicyInput, PolicyOutput
+from argon.policy.transforms import ChunkingTransform
 
-from foundry.core.dataclasses import dataclass
+from argon.core.dataclasses import dataclass
 
-from foundry.data import Data, PyTreeData
-from foundry.data.normalizer import Normalizer, LinearNormalizer, StdNormalizer
-from foundry.train import Vars
+from argon.data import Data, PyTreeData
+from argon.data.normalizer import Normalizer, LinearNormalizer, StdNormalizer
+from argon.train import Vars
 
-from foundry import train
-from foundry.env.core import Environment
+from argon import train
+from argon.env.core import Environment
 
-import foundry.train.console
+import argon.train.console
 
 import wandb
 import optax
@@ -24,11 +24,11 @@ import flax.linen as nn
 import flax.linen.activation as activations
 
 from typing import Sequence
-from foundry.models.embed import SinusoidalPosEmbed
-from foundry.models.unet import UNet
+from argon.models.embed import SinusoidalPosEmbed
+from argon.models.unet import UNet
 
 import jax
-import foundry.numpy as jnp
+import argon.numpy as jnp
 import logging
 import pickle
 import os
@@ -66,7 +66,7 @@ class Checkpoint(Result):
     vars: Vars
 
     def create_denoiser(self):
-        model, _ = self.model_config.create_model(foundry.random.key(42), 
+        model, _ = self.model_config.create_model(argon.random.key(42), 
             self.observations_structure,
             self.actions_structure
         )
@@ -75,7 +75,7 @@ class Checkpoint(Result):
         )
 
     def create_policy(self) -> Policy:
-        model, _ = self.model_config.create_model(foundry.random.key(42), 
+        model, _ = self.model_config.create_model(argon.random.key(42), 
             self.observations_structure,
             self.actions_structure
         )

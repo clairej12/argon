@@ -1,24 +1,24 @@
-from foundry.core.dataclasses import dataclass, replace
-from foundry.diffusion.ddpm import DDPMSchedule
-from foundry.core import tree
-from foundry.random import PRNGSequence
-from foundry.data import PyTreeData
+from argon.core.dataclasses import dataclass, replace
+from argon.diffusion.ddpm import DDPMSchedule
+from argon.core import tree
+from argon.random import PRNGSequence
+from argon.data import PyTreeData
 
-import foundry.train
-from foundry.train import LossOutput
+import argon.train
+from argon.train import LossOutput
 
 from typing import Any
 from collections.abc import Sequence
 
-import foundry.core as F
+import argon.core as F
 
 from pathlib import Path
 from rich.progress import track
 from functools import partial
 
-import foundry.util.serialize
-import foundry.random
-import foundry.numpy as npx
+import argon.util.serialize
+import argon.random
+import argon.numpy as npx
 
 import jax
 import flax.linen as nn
@@ -109,9 +109,9 @@ def evaluate_cond(inputs: EvaluationInputs, cond : Any, rng_key : jax.Array):
     eval_per_cond = inputs.eval_per_cond
 
     def sample(rng_key, eta=1.):
-        r_rng, s_rng, f_rng = foundry.random.split(rng_key, 3)
+        r_rng, s_rng, f_rng = argon.random.split(rng_key, 3)
         denoiser = lambda rng_key, x, t: inputs.model_apply(inputs.vars, x, t-1, cond=cond)
-        t = int(schedule.num_steps * inputs.t_pct) # foundry.random.randint(s_rng, (), minval=1, maxval=trajectory.shape[0])
+        t = int(schedule.num_steps * inputs.t_pct) # argon.random.randint(s_rng, (), minval=1, maxval=trajectory.shape[0])
         if inputs.use_fwd_process:
             sample = schedule.sample(s_rng, denoiser, npx.zeros(inputs.sample_shape), eta=eta)
             noised, _, _ = schedule.add_noise(f_rng, sample, t)
@@ -123,7 +123,7 @@ def evaluate_cond(inputs: EvaluationInputs, cond : Any, rng_key : jax.Array):
             )
             return sample, trajectory[t], t
 
-    rng_keys = foundry.random.split(rng_key, samples_per_cond)
+    rng_keys = argon.random.split(rng_key, samples_per_cond)
     samples, reverse_samples, ts = jax.lax.map(
         sample, rng_keys, 
         batch_size=8
@@ -181,11 +181,11 @@ def evaluate_cond(inputs: EvaluationInputs, cond : Any, rng_key : jax.Array):
     ), gen_data
 
 def evaluate_checkpoint(rng_key, inputs: EvaluationInputs):
-    rng = foundry.random.PRNGSequence(rng_key)
+    rng = argon.random.PRNGSequence(rng_key)
     outputs = []
     for i in track(range(inputs.batches)):
-        cond = foundry.random.uniform(next(rng), (inputs.batch_size, 2), minval=-2.5, maxval=2.5)
-        rng_keys = foundry.random.split(next(rng), inputs.batch_size)
+        cond = argon.random.uniform(next(rng), (inputs.batch_size, 2), minval=-2.5, maxval=2.5)
+        rng_keys = argon.random.split(next(rng), inputs.batch_size)
         output = F.vmap(evaluate_cond, in_axes=(None, 0, 0))(
             inputs, cond, rng_keys,
         )
@@ -208,7 +208,7 @@ def evaluate_checkpoint(rng_key, inputs: EvaluationInputs):
     optimizer = optax.adam(optax.cosine_decay_schedule(1e-3, iterations))
     opt_state = optimizer.init(vars["params"])
 
-    @foundry.train.batch_loss
+    @argon.train.batch_loss
     def loss_fn(vars, rng_key, sample):
         alphas = model.apply(vars, sample.cond, sample.t)
         interpolated = alphas[:, None, None, None] * sample.out_keypoints
@@ -220,7 +220,7 @@ def evaluate_checkpoint(rng_key, inputs: EvaluationInputs):
         )
 
     gen_data = tree.map(lambda x: npx.reshape(x, (-1,) + x.shape[2:]), gen_data)
-    with foundry.train.loop(
+    with argon.train.loop(
         PyTreeData(
             gen_data
         ).stream().shuffle(next(rng)).batch(128),
@@ -229,13 +229,13 @@ def evaluate_checkpoint(rng_key, inputs: EvaluationInputs):
     ) as loop:
         for epoch in loop.epochs():
             for step in epoch.steps():
-                opt_state, vars, metrics = foundry.train.step(
+                opt_state, vars, metrics = argon.train.step(
                     loss_fn, optimizer, opt_state=opt_state,
                     vars=vars, rng_key=step.rng_key,
                     batch=step.batch
                 )
                 if step.iteration % 1000 == 0:
-                    foundry.train.console.log(
+                    argon.train.console.log(
                         step.iteration, metrics
                     )
     def loss_fn(sample):
@@ -269,7 +269,7 @@ def evaluate_checkpoint(rng_key, inputs: EvaluationInputs):
     )
 
 def run(config : Config):
-    rng = foundry.random.PRNGSequence(config.seed)
+    rng = argon.random.PRNGSequence(config.seed)
 
     from .main import logger as main_logger
     main_logger.setLevel(logging.DEBUG)
@@ -298,7 +298,7 @@ def run(config : Config):
         artifacts = {final_step: final}
 
     path = Path(final.download()) / "checkpoint.zarr.zip"
-    checkpoint = foundry.util.serialize.load_zarr(path)
+    checkpoint = argon.util.serialize.load_zarr(path)
 
     normalizer, train_data, _ = checkpoint.create_data()
     keypoints = jax.vmap(normalizer.normalize)(
@@ -311,7 +311,7 @@ def run(config : Config):
     output_artifact = wandb.Artifact(name="evaluation", type="evaluation")
     for iterations, artifact in reversed(artifacts.items()):
         path = Path(artifact.download()) / "checkpoint.zarr.zip"
-        checkpoint = foundry.util.serialize.load_zarr(path)
+        checkpoint = argon.util.serialize.load_zarr(path)
         logger.info(f"Evaluating iteration {iterations}")
         output = evaluate_checkpoint(next(rng), EvaluationInputs(
             vars=checkpoint.vars,
@@ -337,7 +337,7 @@ def run(config : Config):
         logger.info(f"Linear percentiles: {npx.percentile(output.lin_error, npx.array([10, 20, 50, 70, 90]))}")
         logger.info(f"Linear error: {npx.mean(output.lin_error)}, NW error: {npx.mean(output.nw_error)}")
         result_url = f"{config.bucket_url}/{wandb_run.id}/{iterations:06}.zarr.zip"
-        foundry.util.serialize.save(result_url, output)
+        argon.util.serialize.save(result_url, output)
         output_artifact.add_reference(result_url, f"eval_{iterations:06}.zarr.zip")
     wandb_run.log_artifact(output_artifact)
     output_artifact.wait()

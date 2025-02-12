@@ -1,0 +1,18 @@
+[project]
+name = "argon-diffusion"
+version = "0.1.0"
+description = "Diffusion built on top of argon"
+authors = [
+    {name = "Daniel Pfrommer", email = "dan.pfrommer@gmail.com"},
+]
+dependencies = ["argon-core"]
+
+requires-python = ">=3.10"
+license = {text = "MIT"}
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/argon"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

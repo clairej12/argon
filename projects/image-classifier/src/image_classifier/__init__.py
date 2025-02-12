@@ -1,26 +1,26 @@
-from foundry.core.dataclasses import dataclass
+from argon.core.dataclasses import dataclass
 
-from foundry.core import tree
-from foundry.train import LossOutput
-from foundry.random import PRNGSequence
-from foundry.datasets.vision import image_class_datasets
-from foundry.models import models
+from argon.core import tree
+from argon.train import LossOutput
+from argon.random import PRNGSequence
+from argon.datasets.vision import image_class_datasets
+from argon.models import models
 
 from functools import partial
 
-import foundry.train
-import foundry.train.wandb
-import foundry.train.console
-import foundry.train.sharpness
+import argon.train
+import argon.train.wandb
+import argon.train.console
+import argon.train.sharpness
 
 import os
 import wandb
 import math
 import optax
 import jax
-import foundry.numpy as jnp
+import argon.numpy as jnp
 
-import foundry.util
+import argon.util
 import logging
 logger = logging.getLogger(__name__)
 
@@ -201,8 +201,8 @@ def run(config: Config):
             var_updates=mutated
         )
     val_loss = partial(loss_fn, train=False)
-    batch_loss = foundry.train.batch_loss(loss_fn)
-    val_batch_loss = foundry.train.batch_loss(val_loss)
+    batch_loss = argon.train.batch_loss(loss_fn)
+    val_batch_loss = argon.train.batch_loss(val_loss)
     
     vars = model.init(next(rng), jnp.zeros_like(normalizer.structure.pixels))
     opt_state = optimizer.init(vars["params"])
@@ -216,51 +216,51 @@ def run(config: Config):
             .shuffle(next(rng), resample=True).batch(config.batch_size)
     )
     test_data = dataset.splits["test"].stream().batch(2*config.batch_size)
-    with foundry.train.loop(train_data, rng_key=next(rng), iterations=iterations,
+    with argon.train.loop(train_data, rng_key=next(rng), iterations=iterations,
                 log_compiles=config.log_compiles, trace=config.trace) as loop, \
             test_data.build() as test_stream, \
             sharpness_data.build() as sharpness_stream:
         
         for epoch in loop.epochs():
             for step in epoch.steps():
-                opt_state, vars, metrics = foundry.train.step(
+                opt_state, vars, metrics = argon.train.step(
                     batch_loss, optimizer,
                     opt_state, vars,
                     step.rng_key, step.batch 
                 )
-                foundry.train.wandb.log(
+                argon.train.wandb.log(
                     step.iteration, metrics, {"lr": schedule(step.iteration)},
                     run=wandb_run, prefix="train/"
                 )
                 if step.iteration % 100 == 0:
-                    foundry.train.console.log(
+                    argon.train.console.log(
                         step.iteration, metrics, {"lr": schedule(step.iteration)},
                         prefix="train."
                     )
                 # validate + log every 500 steps
                 if step.iteration % 300 == 0:
-                    test_stream, test_metrics = foundry.train.eval_stream(
+                    test_stream, test_metrics = argon.train.eval_stream(
                         val_batch_loss, vars, next(rng), test_stream
                     )
-                    foundry.train.console.log(
+                    argon.train.console.log(
                         step.iteration, test_metrics,
                         prefix="test."
                     )
-                    foundry.train.wandb.log(
+                    argon.train.wandb.log(
                         step.iteration, test_metrics,
                         prefix="test/", run=wandb_run
                     )
                 if step.iteration % 600 == 0:
                     sharpness_stream, sharpness_batch = sharpness_stream.next()
-                    sharpness_metrics = foundry.train.sharpness.sharpness_stats(
+                    sharpness_metrics = argon.train.sharpness.sharpness_stats(
                         val_loss, vars, next(rng), sharpness_batch,
                         batch_size=max(64, config.batch_size)
                     )
-                    foundry.train.console.log(
+                    argon.train.console.log(
                         step.iteration, sharpness_metrics,
                         prefix="sharpness."
                     )
-                    foundry.train.wandb.log(
+                    argon.train.wandb.log(
                         step.iteration, sharpness_metrics,
                         prefix="sharpness/", run=wandb_run
                     )

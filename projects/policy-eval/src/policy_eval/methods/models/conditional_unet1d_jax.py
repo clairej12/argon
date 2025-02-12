@@ -1,14 +1,14 @@
 import jax
-import foundry.numpy as jnp
+import argon.numpy as jnp
 import flax.linen as nn
 import flax.linen.initializers as initializers
 
 from typing import Sequence, Callable, Any
 ModuleDef = Any
 
-from foundry.models import activation as activations
-from foundry.models.attention import AttentionBlock
-from foundry.models.embed import SinusoidalPosEmbed
+from argon.models import activation as activations
+from argon.models.attention import AttentionBlock
+from argon.models.embed import SinusoidalPosEmbed
 
 class Upsample1d(nn.Module):
     out_channels: int = None

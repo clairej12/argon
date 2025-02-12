@@ -1,7 +1,7 @@
 import itertools
 import sys
 import numpy as np
-from foundry.datasets.util import download, cache_path
+from argon.datasets.util import download, cache_path
 import torch
 import dill
 

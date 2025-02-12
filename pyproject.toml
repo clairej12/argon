@@ -1,82 +1,31 @@
 [project]
-name = "foundry-meta"
+name = "argon-workspace"
 version = "0.1.0"
-description = "Default template for PDM package"
 authors = [
     {name = "Daniel Pfrommer", email = "dan.pfrommer@gmail.com"},
 ]
 dependencies = [
-    "foundry-core[ipython] @ file:///${PROJECT_ROOT}/packages/core",
-    "foundry-systems @ file:///${PROJECT_ROOT}/packages/systems",
-    "foundry-models @ file:///${PROJECT_ROOT}/packages/models",
-    "policy-eval @ file:///${PROJECT_ROOT}/projects/policy-eval",
-    "image-classifier @ file:///${PROJECT_ROOT}/projects/image-classifier",
-    "language-model @ file:///${PROJECT_ROOT}/projects/language-model",
-    "image-diffusion @ file:///${PROJECT_ROOT}/projects/image-diffusion",
-    "cond-diffusion-toy @ file:///${PROJECT_ROOT}/projects/cond-diffusion-toy",
-    "scikit-learn>=1.6.1",
-    "ott-jax>=0.5.0",
+    "argon-core",
+    "argon-systems",
+    "argon-models",
+    "argon-diffusion"
 ]
-requires-python = "==3.12"
+requires-python = "==3.13.*"
 readme = "README.md"
 license = {text = "MIT"}
 
-[project.optional-dependencies]
-cuda = [
-    "jax[cuda]>=0.4.32"
-]
-metal = [
-    "jax-metal>=0.1.1",
-]
+[tool.uv.sources]
+argon-core = { workspace = true }
+argon-systems = { workspace = true }
+argon-diffusion = { workspace = true }
+argon-models = { workspace = true }
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["packages/core/src"]
 
 [build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
-
-[tool.pdm.dev-dependencies]
-dev = [
-    "-e foundry-core[ipython] @ file:///${PROJECT_ROOT}/packages/core",
-    "-e foundry-systems @ file:///${PROJECT_ROOT}/packages/systems",
-    "-e foundry-models @ file:///${PROJECT_ROOT}/packages/models",
-    "-e policy-eval @ file:///${PROJECT_ROOT}/projects/policy-eval",
-    "-e image-classifier @ file:///${PROJECT_ROOT}/projects/image-classifier",
-    "-e language-model @ file:///${PROJECT_ROOT}/projects/language-model",
-    "-e image-diffusion @ file:///${PROJECT_ROOT}/projects/image-diffusion",
-    "-e cond-diffusion-toy @ file:///${PROJECT_ROOT}/projects/cond-diffusion-toy",
-    # pin a jax version
-    "jax==0.5.0",
-    "zarr==2.18.4",
-    "wandb<0.19.1",
-    # Docmentation utilities
-    "sphinx>=7.2.6",
-    "sphinx-design>=0.5.0",
-    "sphinx-remove-toctrees>=0.0.3",
-    "sphinx-copybutton>=0.5.2",
-    "sphinx-book-theme>=1.1.2",
-    "sphinx-autodoc-typehints>=2.0.0",
-    "furo>=2024.1.29",
-    "sphinx-toolbox>=3.5.0",
-    # Tests
-    "pytest>=8.2.2",
-    "matplotlib>=3.9.2",
-    "pandas>=2.2.3",
-    "seaborn>=0.13.2",
-]
-
-[tool.pdm.resolution]
-excludes = ["pytinyrenderer", "evdev"]
-
-[tool.pdm.scripts]
-image_diffusion = "./projects/image-diffusion/scripts/image_diffusion"
-image_diffusion_eval = "./projects/image-diffusion/scripts/image_diffusion_eval"
-
-language_model = "./projects/language-model/scripts/language_model"
-
-toy_diffusion = "./projects/cond-diffusion-toy/scripts/toy_diffusion"
-toy_perplexity = "./projects/cond-diffusion-toy/scripts/toy_perplexity"
-
-policy_eval = "./projects/policy-eval/scripts/policy_eval"
-
-[tool.nixpy]
-python-version = "3.10"
-platforms = ["x86_64-linux", "powerpc64le-linux", "aarch64-darwin"]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

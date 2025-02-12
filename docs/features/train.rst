@@ -1,14 +1,14 @@
 Training Models
 ===============
 
-foundry can automate a simple JAX training loop for you.
+argon can automate a simple JAX training loop for you.
 
 For instance, here is a short block of code
 which trains a model on a dataset using the adam optimizer:
 
 .. code-block:: python
 
-    import foundry.train as tu
+    import argon.train as tu
 
     def loss_fn(vars: Any, iteration: jax.Array,
                 rng_key: jax.Array, batch: jax.Array) -> tu.LossOutput:

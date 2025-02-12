@@ -1,19 +1,18 @@
 [project]
-name = "foundry-models"
+name = "argon-models"
 version = "0.1.0"
-description = "Models built on top of foundry"
+description = "Models built on top of argon"
 authors = [
     {name = "Daniel Pfrommer", email = "dan.pfrommer@gmail.com"},
 ]
-dependencies = [
-    "foundry-core @ file:///${PROJECT_ROOT}/../core",
-]
+dependencies = ["argon-core"]
+
 requires-python = ">=3.10"
 license = {text = "MIT"}
 
-[tool.pdm]
-distribution = true
+[tool.hatch.build.targets.wheel]
+packages = ["src/argon"]
 
 [build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
+requires = ["hatchling"]
+build-backend = "hatchling.build"

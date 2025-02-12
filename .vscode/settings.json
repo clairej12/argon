@@ -2,5 +2,5 @@
     "python.analysis.extraPaths": [
         "lib"
     ],
-    "julia.environmentPath": "/Users/daniel/Documents/code/foundry"
+    "julia.environmentPath": "/Users/daniel/Documents/code/argon"
 }

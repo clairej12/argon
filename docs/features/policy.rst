@@ -2,14 +2,14 @@
   :language: python
   :class: highlight
 
-.. currentmodule:: foundry.policy
+.. currentmodule:: argon.policy
 
 Policies and Rollouts
 =====================
 
-foundry contains utilities for defining control policies
+argon contains utilities for defining control policies
 ontop of dynamical systems. These tools can be found in the
-:py:mod:`foundry.policy` module.
+:py:mod:`argon.policy` module.
 
 Policies
 ^^^^^^^^
@@ -70,7 +70,7 @@ which will replay a given sequence of actions:
 
         @property
         def rollout_length(self) -> int:
-            return foundry.util.axis_size(self.actions, 0)
+            return argon.util.axis_size(self.actions, 0)
 
 Rollouts
 ^^^^^^^^

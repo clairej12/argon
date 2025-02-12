@@ -1,36 +1,36 @@
 from ..common import Sample, Inputs, Result, DataConfig
 
-import foundry.core as F
-import foundry.random
+import argon.core as F
+import argon.random
 
-from foundry.core import tree
-from foundry.diffusion import DDPMSchedule
-from foundry.random import PRNGSequence
-from foundry.policy import Policy, PolicyInput, PolicyOutput
-from foundry.policy.transforms import ChunkingTransform
+from argon.core import tree
+from argon.diffusion import DDPMSchedule
+from argon.random import PRNGSequence
+from argon.policy import Policy, PolicyInput, PolicyOutput
+from argon.policy.transforms import ChunkingTransform
 
-from foundry.core.dataclasses import dataclass
-from foundry.data.normalizer import Normalizer, LinearNormalizer, StdNormalizer
-from foundry.train import Vars
+from argon.core.dataclasses import dataclass
+from argon.data.normalizer import Normalizer, LinearNormalizer, StdNormalizer
+from argon.train import Vars
 
-from foundry import train
+from argon import train
 
-import foundry.train.console
-import foundry.train.wandb
+import argon.train.console
+import argon.train.wandb
 import optax
 
 import flax.linen as nn
 import flax.linen.activation as activations
 
 from typing import Sequence
-from foundry.models.embed import SinusoidalPosEmbed
-from foundry.models.unet import UNet
+from argon.models.embed import SinusoidalPosEmbed
+from argon.models.unet import UNet
 
 from functools import partial
 
 import chex
 import jax
-import foundry.numpy as jnp
+import argon.numpy as jnp
 import logging
 
 from ott.geometry import pointcloud
@@ -92,7 +92,7 @@ class Checkpoint(Result):
     vars: Vars
 
     def create_denoiser(self):
-        model, _ = self.model_config.create_model(foundry.random.key(42), 
+        model, _ = self.model_config.create_model(argon.random.key(42), 
             self.observations_structure,
             self.actions_structure
         )
@@ -101,18 +101,18 @@ class Checkpoint(Result):
         )
 
     def create_policy(self) -> Policy:
-        model, _ = self.model_config.create_model(foundry.random.key(42), 
+        model, _ = self.model_config.create_model(argon.random.key(42), 
             self.observations_structure,
             self.actions_structure
         )
         # TODO: assert that the vars are the same type/shape
         def chunk_policy(input: PolicyInput) -> PolicyOutput:
-            s_rng, n_rng = foundry.random.split(input.rng_key)
+            s_rng, n_rng = argon.random.split(input.rng_key)
             obs = input.observation
             obs = self.obs_normalizer.normalize(obs)
             if self.replica_noise is not None and self.replica_noise > 0:
                 obs_flat, uf = tree.ravel_pytree(obs)
-                obs_flat = obs_flat + self.replica_noise * foundry.random.normal(n_rng, obs_flat.shape)
+                obs_flat = obs_flat + self.replica_noise * argon.random.normal(n_rng, obs_flat.shape)
                 obs = uf(obs_flat)
             model_fn = lambda rng_key, noised_actions, t: model(
                 self.vars, rng_key, obs, noised_actions, t - 1
@@ -214,10 +214,10 @@ class DPConfig:
         def loss_fn(vars, rng_key, sample: Sample):
             sample_norm = normalizer.normalize(sample)
             obs = sample_norm.observations
-            s_rng, n_rng = foundry.random.split(rng_key)
+            s_rng, n_rng = argon.random.split(rng_key)
             if self.replica_noise is not None and self.replica_noise > 0:
                 obs_flat, uf = tree.ravel_pytree(obs)
-                obs_flat = obs_flat + self.replica_noise * foundry.random.normal(n_rng, obs_flat.shape)
+                obs_flat = obs_flat + self.replica_noise * argon.random.normal(n_rng, obs_flat.shape)
                 obs = uf(obs_flat)
             actions = sample_norm.actions
             denoiser = lambda rng_key, noised_actions, t: model(vars, rng_key, obs, noised_actions, t)
@@ -232,13 +232,13 @@ class DPConfig:
             obs = sample_batch.observations
             actions = sample_batch.actions
 
-            ddpm_rng, ddim_rng = foundry.random.split(rng_key, 2)
-            ddpm_rngs = foundry.random.split(ddpm_rng, tree.axis_size(obs))
-            ddim_rngs = foundry.random.split(ddim_rng, tree.axis_size(obs))
+            ddpm_rng, ddim_rng = argon.random.split(rng_key, 2)
+            ddpm_rngs = argon.random.split(ddpm_rng, tree.axis_size(obs))
+            ddim_rngs = argon.random.split(ddim_rng, tree.axis_size(obs))
             def sample(rng_key, obs, eta=1.0):
                 denoiser = lambda rng_key, noised_actions, t: model(vars, rng_key, obs, noised_actions, t)
                 sampler = lambda rng_key: (obs, schedule.sample(rng_key, denoiser, actions_structure, eta=eta))
-                return F.vmap(sampler)(foundry.random.split(rng_key, 3))
+                return F.vmap(sampler)(argon.random.split(rng_key, 3))
             sampled_obs, sampled_actions = F.vmap(sample)(ddpm_rngs, obs)
             sampled_obs, sampled_actions = tree.map(lambda x: jnp.reshape(x, (-1, *x.shape[2:])), (sampled_obs, sampled_actions))
             sampled_ddim_obs, sampled_ddim_actions = F.vmap(partial(sample, eta=0.0))(ddim_rngs, obs)

@@ -2,7 +2,7 @@
 
 if __name__=="__main__":
     # setup logging etc.
-    from foundry.util.runtime import setup
+    from argon.util.runtime import setup
     setup()
 
     import sys

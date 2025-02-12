@@ -1,19 +1,18 @@
-![Docs](https://github.com/pfrommerd/foundry/actions/workflows/docs.yml/badge.svg)
+![Docs](https://github.com/pfrommerd/argon/actions/workflows/docs.yml/badge.svg)
 
-# [Documentation](https://foundry.pfrommer.dev/)
+# [Documentation](https://argon.pfrommer.dev/)
 
 # Installation Instructions
 
- 1. Install Python >= 3.10
- 2. Install [PDM](https://pdm-project.org/latest/).
+ 1. Install [uv](https://github.com/astral-sh/uv)
     ```bash
-    curl -sSL https://pdm-project.org/install-pdm.py | python3 -
+    curl -LsSf https://astral.sh/uv/install.sh | sh
     ```
- 3. To set up the foundry environment, run
+ 2. To set up the argon environment, run
     ```bash
-    pdm install -d
+    uv sync
     ```
- 4. Then try some notebooks:
+ 3. Then try some notebooks:
     ```bash
-    pdm run jupyter lab
+    uv run ...
     ```

@@ -1,18 +1,18 @@
-import foundry.numpy as npx
-import foundry.random
-import foundry.core as F
-import foundry.policy
+import argon.numpy as npx
+import argon.random
+import argon.core as F
+import argon.policy
 
-from foundry.core import tree
-from foundry.graphics import canvas
-from foundry.env.core import Environment, ImageRender
-from foundry.data.sequence import SequenceData, Step
-from foundry.policy import Policy, PolicyInput, PolicyOutput
-from foundry.core import Array
-from foundry.datasets.env import EnvDataset
+from argon.core import tree
+from argon.graphics import canvas
+from argon.env.core import Environment, ImageRender
+from argon.data.sequence import SequenceData, Step
+from argon.policy import Policy, PolicyInput, PolicyOutput
+from argon.core import Array
+from argon.datasets.env import EnvDataset
         
-from foundry.core.dataclasses import dataclass
-from foundry.util.registry import Registry
+from argon.core.dataclasses import dataclass
+from argon.util.registry import Registry
 
 import flax.linen as nn
 import jax
@@ -89,20 +89,20 @@ class EmbedEnvironment(Environment):
         return npx.zeros((2 + self.d,))
     
     def reset(self, rng_key):
-        Z_rng, z_sphere_rng, z_d_rng, w_rng, w_d_rng = foundry.random.split(rng_key, 5)
-        Z = foundry.random.bernoulli(Z_rng)
+        Z_rng, z_sphere_rng, z_d_rng, w_rng, w_d_rng = argon.random.split(rng_key, 5)
+        Z = argon.random.bernoulli(Z_rng)
 
         # generate uniform over sphere z
-        z = foundry.random.normal(z_sphere_rng, (self.d,))
+        z = argon.random.normal(z_sphere_rng, (self.d,))
         z = z / npx.linalg.norm(z)
-        z = z * foundry.random.uniform(z_d_rng)
+        z = z * argon.random.uniform(z_d_rng)
 
         z = npx.concatenate((npx.zeros((2,)), z), axis=0)
         z = z.at[2].add(3)
 
-        w = foundry.random.normal(w_rng, (self.d + 1,))
+        w = argon.random.normal(w_rng, (self.d + 1,))
         w = w / npx.linalg.norm(w)
-        w = w * foundry.random.uniform(w_d_rng)
+        w = w * argon.random.uniform(w_d_rng)
 
         w = npx.concatenate((npx.zeros((1,)), w))
         return (1 - Z) * z + Z * w
@@ -209,9 +209,9 @@ def create_data(rng_key, d, N, N_test, T, pair_first):
     env = create_environment(rng_key, d, pair_first=pair_first)
     expert = EmbedExpert(env.K, env.vars, env.tau, env.bump)
     def rollout(rng_key):
-        x0_rng, p_rng = foundry.random.split(rng_key)
+        x0_rng, p_rng = argon.random.split(rng_key)
         x0 = env.reset(x0_rng)
-        rollout = foundry.policy.rollout(
+        rollout = argon.policy.rollout(
             env.step, x0, expert, 
             policy_rng_key=p_rng,
             length=T, last_action=True
@@ -222,9 +222,9 @@ def create_data(rng_key, d, N, N_test, T, pair_first):
             observation=rollout.states,
             action=rollout.actions
         )
-    train = jax.vmap(rollout)(foundry.random.split(rng_key, N))
-    test = jax.vmap(rollout)(foundry.random.split(rng_key, N_test))
-    valid = jax.vmap(rollout)(foundry.random.split(rng_key, N_test))
+    train = jax.vmap(rollout)(argon.random.split(rng_key, N))
+    test = jax.vmap(rollout)(argon.random.split(rng_key, N_test))
+    valid = jax.vmap(rollout)(argon.random.split(rng_key, N_test))
 
     return  ExpertDataset(train, test, valid, env.A, env.K, env.vars, env.d)
 
@@ -232,25 +232,25 @@ def create_data(rng_key, d, N, N_test, T, pair_first):
 def register_envs(registry : Registry, prefix=None):
     registry.register(
         "lower_bound/stable/1", 
-        partial(create_environment, rng_key=foundry.random.key(42), d=2, pair_first=True),
+        partial(create_environment, rng_key=argon.random.key(42), d=2, pair_first=True),
         prefix=prefix
     )
     registry.register(
         "lower_bound/stable/2", 
-        partial(create_environment, rng_key=foundry.random.key(42), d=2, pair_first=False),
+        partial(create_environment, rng_key=argon.random.key(42), d=2, pair_first=False),
         prefix=prefix
     )
 
 def register_datasets(registry: Registry, prefix=None):
     registry.register(
         "lower_bound/stable/1",
-        partial(create_data, rng_key=foundry.random.key(42), 
+        partial(create_data, rng_key=argon.random.key(42), 
                 d=4, T=32, N=2048, N_test=64, pair_first=True),
         prefix=prefix
     )
     registry.register(
         "lower_bound/stable/2",
-        partial(create_data, rng_key=foundry.random.key(42),
+        partial(create_data, rng_key=argon.random.key(42),
                 d=4, T=32, N=2048, N_test=64, pair_first=False),
         prefix=prefix
     )

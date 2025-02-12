@@ -1,9 +1,0 @@
-[build-system]
-requires = [
-    "setuptools >= 61"
-]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "glfw"
-version = "2.7.0"

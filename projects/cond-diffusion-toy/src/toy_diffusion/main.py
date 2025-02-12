@@ -1,17 +1,17 @@
-from foundry.core.dataclasses import dataclass
-from foundry.util.registry import Registry
-from foundry.datasets.core import Dataset
-from foundry.diffusion.ddpm import DDPMSchedule
-from foundry.data.core import PyTreeData
-from foundry.train import LossOutput
+from argon.core.dataclasses import dataclass
+from argon.util.registry import Registry
+from argon.datasets.core import Dataset
+from argon.diffusion.ddpm import DDPMSchedule
+from argon.data.core import PyTreeData
+from argon.train import LossOutput
 
-import foundry.core as F
-import foundry.random
-import foundry.train
-import foundry.train.console
-import foundry.train.wandb
-import foundry.numpy as npx
-import foundry.core.tree as tree
+import argon.core as F
+import argon.random
+import argon.train
+import argon.train.console
+import argon.train.wandb
+import argon.numpy as npx
+import argon.core.tree as tree
 
 from .data import Sample
 
@@ -52,7 +52,7 @@ class ModelConfig:
     sample_structure: Sample
 
     def create_model(self, rng_key=None):
-        from foundry.models import register_all
+        from argon.models import register_all
         registry = Registry()
         register_all(registry)
         model = registry.create(self.model)
@@ -95,7 +95,7 @@ def train(config):
     logger.setLevel(logging.DEBUG)
 
     logger.info(f"Config: {config}")
-    rng = foundry.random.PRNGSequence(config.seed)
+    rng = argon.random.PRNGSequence(config.seed)
     dataset = config.create_dataset()
     data = dataset.split("train")
     model_config = ModelConfig(model=config.model, sample_structure=data.structure)
@@ -123,9 +123,9 @@ def train(config):
             sample = schedule.sample(rng_key, diffuser, data.structure.y)
             sample = Sample(x=cond, y=sample)
             return normalizer.unnormalize(sample)
-        cond = foundry.random.uniform(rng_key, (128*128*4,))
+        cond = argon.random.uniform(rng_key, (128*128*4,))
         samples = jax.vmap(generate_sample, in_axes=(None, 0, 0))(
-            vars, cond, foundry.random.split(rng_key, cond.shape[0])
+            vars, cond, argon.random.split(rng_key, cond.shape[0])
         )
         return samples
 
@@ -146,9 +146,9 @@ def train(config):
             sample = schedule.sample(rng_key, diffuser, data.structure.y)
             sample = Sample(x=cond, y=sample)
             return normalizer.unnormalize(sample)
-        cond = foundry.random.uniform(rng_key, (128*128*4,))
+        cond = argon.random.uniform(rng_key, (128*128*4,))
         samples = jax.vmap(generate_sample)(
-            cond, foundry.random.split(rng_key, cond.shape[0])
+            cond, argon.random.split(rng_key, cond.shape[0])
         )
         return samples
 
@@ -156,7 +156,7 @@ def train(config):
         def diffuser(rng_key, x, t):
             return model.apply(vars, x, t, cond=cond)
         sample = lambda r: schedule.sample(r, diffuser, data.structure.y)
-        samples = jax.vmap(sample)(foundry.random.split(next(rng), 128))
+        samples = jax.vmap(sample)(argon.random.split(next(rng), 128))
         def denoiser(rng_key, x_noised, t):
             return schedule.output_from_denoised(
                 x_noised, t, 
@@ -164,11 +164,11 @@ def train(config):
             )
         return denoiser
 
-    @foundry.train.batch_loss
+    @argon.train.batch_loss
     def loss_fn(vars, rng_key, sample):
         sample = normalizer.normalize(sample)
 
-        n_rng, t_rng = foundry.random.split(rng_key)
+        n_rng, t_rng = argon.random.split(rng_key)
         t = jax.random.randint(t_rng, (), 0, schedule.num_steps) + 1
         noised_sample_y, _, target = schedule.add_noise(n_rng, sample.y, t)
         pred = model.apply(vars, noised_sample_y, t, cond=sample.x)
@@ -192,25 +192,25 @@ def train(config):
     opt_state = optimizer.init(vars["params"])
 
 
-    with foundry.train.loop(
+    with argon.train.loop(
         data.stream().shuffle(next(rng)).batch(256),
         rng_key=next(rng),
         iterations=config.iterations, show_epochs=False
     ) as loop:
         for epoch in loop.epochs():
             for step in epoch.steps():
-                opt_state, vars, grad_norm, metrics = foundry.train.step(
+                opt_state, vars, grad_norm, metrics = argon.train.step(
                     loss_fn, optimizer, opt_state=opt_state,
                     vars=vars, rng_key=step.rng_key,
                     batch=step.batch,
                     return_grad_norm=True
                 )
-                foundry.train.wandb.log(
+                argon.train.wandb.log(
                     step.iteration, metrics, {"lr": lr_schedule(step.iteration), "grad_norm": grad_norm},
                     run=wandb_run, prefix="train/"
                 )
                 if step.iteration % 1000 == 0:
-                    foundry.train.console.log(
+                    argon.train.console.log(
                         step.iteration, metrics,
                     )
                     samples = generate_samples(vars, next(rng))

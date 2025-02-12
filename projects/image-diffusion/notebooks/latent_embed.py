@@ -1,20 +1,20 @@
-import foundry.random
-import foundry.numpy as npx
-import foundry.train
+import argon.random
+import argon.numpy as npx
+import argon.train
 
-import foundry.core as F
+import argon.core as F
 import flax.linen as nn
 import flax.linen.activation as activations
 
 import math
 import jax
 import optax
-import foundry.train.console
+import argon.train.console
 
 import logging
 logger = logging.getLogger(__name__)
 
-from foundry.data import PyTreeData
+from argon.data import PyTreeData
 from typing import Sequence
 
 class Encoder(nn.Module):
@@ -61,7 +61,7 @@ class Autoencoder(nn.Module):
 
     def __call__(self, x, rng_key):
         z, stddev = self.encoder(x)
-        z = z + stddev * foundry.random.normal(rng_key, z.shape)
+        z = z + stddev * argon.random.normal(rng_key, z.shape)
         return z, stddev, self.decoder(z)
 
 
@@ -86,7 +86,7 @@ def train_embedding(train_data, mode="vae",
         logger.info("Embedding done!")
     train_data = PyTreeData((train_data,latents))
     ae = Autoencoder()
-    ae_vars = ae.init(foundry.random.key(42), npx.zeros((28, 28, 1), npx.float32), foundry.random.key(42))
+    ae_vars = ae.init(argon.random.key(42), npx.zeros((28, 28, 1), npx.float32), argon.random.key(42))
     @F.jit
     def loss(vars, rng_key,  sample):
         x, z_guidance = sample
@@ -99,7 +99,7 @@ def train_embedding(train_data, mode="vae",
         else:
             guidance_loss = 0.
         loss = -elbo + guidance_loss
-        return foundry.train.LossOutput(
+        return argon.train.LossOutput(
             loss=loss,
             metrics=dict(
                 log_likelihood=log_likelihood,
@@ -108,22 +108,22 @@ def train_embedding(train_data, mode="vae",
                 loss=loss,
             ),
         )
-    batch_loss = foundry.train.batch_loss(loss)
+    batch_loss = argon.train.batch_loss(loss)
     opt = optax.adamw(optax.cosine_decay_schedule(1e-3, iterations))
     ae_opt_state = opt.init(ae_vars["params"])
 
-    with foundry.train.loop(
+    with argon.train.loop(
         train_data.stream().batch(256),
         iterations=iterations,
-        rng_key=foundry.random.key(42),
+        rng_key=argon.random.key(42),
     ) as loop:
         for epoch in loop.epochs():
             for step in epoch.steps():
-                ae_opt_state, ae_vars, metrics = foundry.train.step(
+                ae_opt_state, ae_vars, metrics = argon.train.step(
                     batch_loss, opt, ae_opt_state, ae_vars, step.rng_key, step.batch
                 )
                 if step.iteration % 1000 == 0:
-                    foundry.train.console.log(step.iteration, metrics)
+                    argon.train.console.log(step.iteration, metrics)
     
     @F.jit
     def encode(x):
