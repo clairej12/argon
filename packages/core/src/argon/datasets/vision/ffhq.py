@@ -1,26 +1,26 @@
 import argon.numpy as jnp
-import argon.core as F
+import argon.transforms as agt
 
-from argon.core import ShapeDtypeStruct
-from argon.core.dataclasses import dataclass
+from argon.typing import ShapeDtypeStruct
+from argon.struct import struct
 from argon.data import Data, io, PyTreeData, normalizer as nu
 from . import Image, ImageDataset
 
-from argon.datasets.core import DatasetRegistry
+from argon.datasets.common import DatasetRegistry
 from argon.datasets import util
 
 from functools import partial
 
 import jax.image
 
-@dataclass
+@struct(frozen=True)
 class FFHQData(Data):
     path: str
     start: int
     end: int
     resolution: int = 128
 
-    @F.jit
+    @agt.jit
     def __getitem__(self, idx) -> Image:
         pixels = io.read_image(
             self.path + "/{:05d}.png", 
@@ -35,7 +35,7 @@ class FFHQData(Data):
     def __len__(self):
         return self.end - self.start
 
-@dataclass
+@struct(frozen=True)
 class FFHQDataset(ImageDataset):
     path: str
     resolution: int
@@ -55,7 +55,7 @@ class FFHQDataset(ImageDataset):
         if name == "hypercube":
             pass
         elif name == "standard_dev":
-            data = F.vmap(norm.normalize)(self.split("train").as_pytree())
+            data = agt.vmap(norm.normalize)(self.split("train").as_pytree())
             normalizer = nu.StdNormalizer.from_data(PyTreeData(data))
             norm = nu.Chain([norm,
                 nu.StdNormalizer(

@@ -1,15 +1,15 @@
-from argon.datasets.core import DatasetRegistry, Dataset
+from argon.datasets.common import DatasetRegistry, Dataset
 
-from argon.core.dataclasses import dataclass
-from argon.core.typing import Array
+from argon.struct import struct
+from argon.typing import Array
 
 from typing import Sequence
 
-@dataclass
+@struct(frozen=True)
 class Image:
     pixels: Array
 
-@dataclass
+@struct(frozen=True)
 class LabeledImage(Image):
     label: Array
 

@@ -6,9 +6,11 @@ authors = [
 ]
 dependencies = [
     "argon-core",
-    "argon-systems",
+    "argon-systems[pusht,robomimic]",
     "argon-models",
-    "argon-diffusion"
+    "argon-diffusion",
+    "argon-algo",
+    "policy-bench"
 ]
 requires-python = "==3.13.*"
 readme = "README.md"
@@ -19,9 +21,11 @@ argon-core = { workspace = true }
 argon-systems = { workspace = true }
 argon-diffusion = { workspace = true }
 argon-models = { workspace = true }
+argon-algo = { workspace = true }
+policy-bench = { workspace = true }
 
 [tool.uv.workspace]
-members = ["packages/*"]
+members = ["packages/*", "projects/*"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["packages/core/src"]
@@ -29,3 +33,9 @@ packages = ["packages/core/src"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "jax[cuda]>=0.5.0",
+    "pytest>=8.3.4",
+]

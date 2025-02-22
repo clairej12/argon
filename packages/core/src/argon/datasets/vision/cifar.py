@@ -5,8 +5,8 @@ import pickle
 
 from argon.data import PyTreeData, Data
 from argon.data import normalizer as nu
-from argon.core.dataclasses import dataclass
-from argon.core import ShapeDtypeStruct, Array
+from argon.struct import struct
+from argon.typing import ShapeDtypeStruct, Array
 
 from . import ImageClassDataset, LabeledImage
 from ..util import download, extract, cache_path
@@ -24,7 +24,7 @@ def _read_batch(file):
     data = data.transpose((0, 2, 3, 1))
     return data, labels
 
-@dataclass
+@struct(frozen=True)
 class CIFARDataset(ImageClassDataset):
     _splits : dict[str, PyTreeData[LabeledImage]]
     _classes : list[str]
@@ -170,7 +170,7 @@ def _load_cifar100(quiet=False):
         _std=jnp.array([0.2675, 0.2565, 0.2761], dtype=jnp.float32),
     )
 
-from argon.datasets.core import DatasetRegistry
+from argon.datasets.common import DatasetRegistry
 
 def register(registry : DatasetRegistry, prefix=None):
     registry.register("cifar10", _load_cifar10, prefix=prefix)

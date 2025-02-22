@@ -5,10 +5,23 @@ description = "Models built on top of argon"
 authors = [
     {name = "Daniel Pfrommer", email = "dan.pfrommer@gmail.com"},
 ]
-dependencies = ["argon-core"]
+dependencies = [
+    "argon-core",
+]
 
 requires-python = ">=3.10"
 license = {text = "MIT"}
+
+[project.optional-dependencies]
+pusht = [
+    "mujoco-mjx>=3.2.7",
+    "shapely>=2.0.7",
+    "zarr>=3.0.3",
+]
+robomimic = [
+    "h5py>=3.13.0",
+    "mujoco-mjx>=3.2.7",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/argon"]
@@ -16,3 +29,4 @@ packages = ["src/argon"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+

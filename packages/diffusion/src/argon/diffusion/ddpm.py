@@ -1,8 +1,8 @@
-from argon.dataclasses import dataclass, field
+from argon.struct import struct, field
 
 import argon.numpy as npx
 import argon.transforms as agt
-import argon.tree as pytree
+import argon.tree
 
 import jax.flatten_util
 import jax
@@ -13,7 +13,7 @@ from typing import Optional, TypeVar, Callable
 
 Sample = TypeVar("Sample")
 
-@dataclass("argon/diffusion/ddpm-schedule", "0.0.1")
+@struct(frozen=True)
 class DDPMSchedule:
     """A schedule for a DDPM model. Implements https://arxiv.org/abs/2006.11239. """
     betas: jax.Array
@@ -72,8 +72,8 @@ class DDPMSchedule:
                     **kwargs) -> "DDPMSchedule":
         beta_end = npx.clip(beta_end, 0, 1)
         beta_start = npx.clip(beta_start, 0, 1)
-        betas = npx.linspace(beta_start, beta_end, num_timesteps, dtype=jnp.float32)
-        betas = npx.concatenate((jnp.zeros((1,), jnp.float32), betas))
+        betas = npx.linspace(beta_start, beta_end, num_timesteps, dtype=npx.float32)
+        betas = npx.concatenate((npx.zeros((1,), npx.float32), betas))
         """ Makes a linear schedule for the DDPM. """
         return DDPMSchedule.make_from_betas(
             betas=betas,
@@ -83,8 +83,8 @@ class DDPMSchedule:
     @staticmethod
     def make_rescaled(num_timesteps, schedule, **kwargs):
         """ Rescales a schedule to have a different number of timesteps. """
-        xs = npx.linspace(0, 1, num_timesteps + 1, dtype=jnp.float32)
-        old_xs = npx.linspace(0, 1, schedule.num_steps + 1, dtype=jnp.float32)
+        xs = npx.linspace(0, 1, num_timesteps + 1, dtype=npx.float32)
+        old_xs = npx.linspace(0, 1, schedule.num_steps + 1, dtype=npx.float32)
         new_alphas_cumprod = npx.interp(xs, old_xs, schedule.alphas_cumprod)
         return DDPMSchedule.make_from_alpha_bars(new_alphas_cumprod, **kwargs)
 
@@ -97,11 +97,11 @@ class DDPMSchedule:
             This means a large amount of noise is added at the start, with
             decreasing noise added as time goes on.
         """
-        t = npx.arange(num_timesteps, dtype=jnp.float32)/num_timesteps
+        t = npx.arange(num_timesteps, dtype=npx.float32)/num_timesteps
         offset = offset if offset is not None else 0.008
         def alpha_bar(t):
             t = (t + offset) / (1 + offset)
-            return npx.pow(jnp.cos(t * jnp.pi / 2), order)
+            return npx.pow(npx.cos(t * npx.pi / 2), order)
         # make the first timestep start at index 1
         alpha_bars = npx.concatenate(
             (npx.ones((1,), dtype=t.dtype), jax.vmap(alpha_bar)(t)),
@@ -113,8 +113,8 @@ class DDPMSchedule:
     def make_scaled_linear_schedule(num_timesteps : int,
                 beta_start : float = 0.0001, beta_end : float = 0.02, **kwargs):
         """ Makes a scaled linear (i.e quadratic) schedule for the DDPM. """
-        betas = npx.concatenate((jnp.zeros((1,), dtype=jnp.float32),
-            npx.linspace(beta_start**0.5, beta_end**0.5, num_timesteps, dtype=jnp.float32)**2),
+        betas = npx.concatenate((npx.zeros((1,), dtype=npx.float32),
+            npx.linspace(beta_start**0.5, beta_end**0.5, num_timesteps, dtype=npx.float32)**2),
         axis=-1)
         return DDPMSchedule.make_from_betas(
             betas=betas,
@@ -127,7 +127,7 @@ class DDPMSchedule:
         alpha_bars_prev = self.alphas_cumprod[:-1]
         betas = self.betas[1:]
         variance = (1 - alpha_bars_prev) / (1 - alpha_bars) * betas
-        variance = npx.concatenate((jnp.zeros((1,)), variance), axis=0)
+        variance = npx.concatenate((npx.zeros((1,)), variance), axis=0)
         return variance
 
     @property
@@ -152,7 +152,7 @@ class DDPMSchedule:
         # sum up the noise added at each step
         def scan_fn(prev_noise_accum, noise_beta):
             noise, alpha, beta = noise_beta
-            noise_accum = npx.sqrt(alpha)*prev_noise_accum + noise*jnp.sqrt(beta)
+            noise_accum = npx.sqrt(alpha)*prev_noise_accum + noise*npx.sqrt(beta)
             return noise_accum, noise_accum
         noise_flat = jax.lax.scan(scan_fn, npx.zeros_like(noise_flat[0]),
                                   (noise_flat, self.alphas, self.betas))[1]
@@ -201,7 +201,7 @@ class DDPMSchedule:
         """ Like add_noise, but assumes that sub_sample is x_{sub_timestep}
         rather than x_0. Note that timestep > sub_timestep or the behavior is undefined!
         """
-        alphas_shifted = npx.concatenate((jnp.ones((1,)), self.alphas_cumprod), axis=-1)
+        alphas_shifted = npx.concatenate((npx.ones((1,)), self.alphas_cumprod), axis=-1)
         alphas_prod = self.alphas_cumprod[timestep] / alphas_shifted[sub_timestep]
         sqrt_alphas_prod = npx.sqrt(alphas_prod)
         sqrt_one_minus_alphas_prod = npx.sqrt(1 - alphas_prod)
@@ -256,7 +256,7 @@ class DDPMSchedule:
             one_minus_alpha_prod_t = 1 - alpha_prod_t
             return unflatten(
                 (sample_flat - npx.sqrt(alpha_prod_t) * model_output_flat) /
-                        npx.maximum(1e-6, jnp.sqrt(one_minus_alpha_prod_t))
+                        npx.maximum(1e-6, npx.sqrt(one_minus_alpha_prod_t))
             )
 
     @agt.jit
@@ -358,7 +358,7 @@ class DDPMSchedule:
         if start_sample is not None:
             random_sample = start_sample
         else:
-            flat_structure, unflatten = tree.ravel_pytree_structure(sample_structure)
+            flat_structure, unflatten = argon.tree.ravel_pytree(argon.tree.map(lambda x: npx.zeros_like(x), sample_structure))
             random_sample = unflatten(jax.random.normal(rng_key, flat_structure.shape, flat_structure.dtype))
 
         def do_step(carry, curr_T, prev_T):
@@ -370,7 +370,7 @@ class DDPMSchedule:
 
         if trajectory:
             # If we want to return the trajectory, do a scan. In that case, num_steps must be statically known
-            timesteps = (npx.arange(0, num_steps + 1) * step_ratio + final_time).round()[::-1].astype(jnp.int32)
+            timesteps = (npx.arange(0, num_steps + 1) * step_ratio + final_time).round()[::-1].astype(npx.int32)
             curr_timesteps, prev_timesteps = timesteps[:-1], timesteps[1:]
             def step(carry, timesteps):
                 rng_key, x_t = carry
@@ -389,8 +389,8 @@ class DDPMSchedule:
             return sample, traj
         else:
             def loop_step(i, carry):
-                curr_T = npx.round((start_time - i)*step_ratio).astype(jnp.int32)
-                prev_T = npx.round((start_time - i - 1)*step_ratio).astype(jnp.int32)
+                curr_T = npx.round((start_time - i)*step_ratio).astype(npx.int32)
+                prev_T = npx.round((start_time - i - 1)*step_ratio).astype(npx.int32)
                 return do_step(carry, curr_T, prev_T)
             carry = (rng_key, random_sample)
             start_time = start_time if start_time is not None else num_steps
@@ -428,3 +428,5 @@ class DDPMSchedule:
             return loss, state
         else:
             return loss
+
+import argon.graph

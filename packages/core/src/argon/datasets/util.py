@@ -6,14 +6,10 @@ import os
 import hashlib
 import shutil
 
-import argon.numpy as jnp
-import numpy as np
+from argon.struct import struct
 
-from PIL import Image
 from rich.progress import Progress
 from pathlib import Path
-
-from argon.core import dataclasses
 
 import zipfile
 import requests
@@ -23,7 +19,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Downloading and extracting utilities...
-_DATA = Path(os.environ["HOME"]) / ".argon_dataset_cache"
+_DATA = Path(os.environ["HOME"]) / ".cache" / "argon_datasets"
 
 def cache_path(key, filename=None):
     path = _DATA / key 
@@ -52,7 +48,7 @@ def download_and_extract(
     extract_to(download_path, extract_path, job_name=job_name,
         strip_folder=strip_folder, quiet=quiet)
     
-@dataclasses.dataclass
+@struct(frozen=False)
 class ExtractInfo:
     filename: str
     size: int

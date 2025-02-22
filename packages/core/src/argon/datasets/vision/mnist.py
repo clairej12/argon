@@ -1,6 +1,6 @@
-from argon.core import Array, ShapeDtypeStruct
-from argon.core.dataclasses import dataclass
-from argon.datasets.core import DatasetRegistry
+from argon.typing import Array, ShapeDtypeStruct
+from argon.struct import struct
+from argon.datasets.common import DatasetRegistry
 from argon.data import Data, PyTreeData
 from ..util import cache_path, download
 from . import ImageClassDataset, LabeledImage
@@ -15,7 +15,7 @@ import jax
 import struct
 import array
 
-@dataclass
+@struct(frozen=True)
 class MnistDataset(ImageClassDataset):
     _splits : dict[str, Data[LabeledImage]]
     _classes : list[str]

@@ -1,88 +1,27 @@
-import flax.linen as nn
-import jax.flatten_util
-import argon.numpy as npx
+import argon.nn as nn
+import argon.typing as atyp
+from argon.registry import Registry
+from argon.nn import activation as activations
 
-from . import activation
-from .embed import SinusoidalPosEmbed
+import typing as typ
 from functools import partial
-from argon.util.registry import Registry
 
-from collections.abc import Sequence
+class MLP(nn.Module):
+    def __init__(self, in_features: int, out_features: int, 
+                    hidden_features: typ.Sequence[int],
+                    activation: str = "relu", *, rngs: nn.Rngs):
+        features = (in_features,) + tuple(hidden_features) + (out_features,)
+        self.layers = tuple(
+            nn.Linear(i, o, rngs=rngs) for i, o in zip(features[:-1], features[1:])
+        )
+        self.activation = getattr(activations, activation)
 
-class MLPClassifier(nn.Module):
-    n_classes: int
-    features: list[int] = (64, 64, 64)
-    activation: str = "gelu"
+    def __call__(self, x: atyp.Array):
+        assert x.ndim == 1
+        h = self.activation
+        for layer in self.layers[:-1]:
+            x = h(layer(x))
+        return self.layers[-1](x)
 
-    @nn.compact
-    def __call__(self, x):
-        x, _ = jax.flatten_util.ravel_pytree(x)
-        h = getattr(activation, self.activation)
-        for i, f in enumerate(self.features):
-            x = nn.Dense(f)(x)
-            x = h(x)
-        x = nn.Dense(self.n_classes)(x)
-        return x
-
-class DiffusionMLP(nn.Module):
-    features: Sequence[int] = (64, 64, 64)
-    activation: str = "gelu"
-    time_embed_dim: int = 32
-    num_classes: int | None = None
-    out_channels: int | None = None
-
-    @nn.compact
-    def __call__(self, x, t, cond=None, train=False):
-        h = getattr(activation, self.activation)
-        # works even if we have multiple timesteps
-        embed = SinusoidalPosEmbed(self.time_embed_dim)(t)
-        embed = nn.Sequential([
-            nn.Dense(self.time_embed_dim),
-            h,
-            nn.Dense(self.time_embed_dim),
-        ])(embed)
-
-        # concatenated embedding
-        if cond is not None:
-            cond_flat, _ = jax.flatten_util.ravel_pytree(cond)
-            cond_flat = 2*(cond_flat - 0.5)
-            cond_flat = - cond_flat
-            cond_embed = nn.Sequential([
-                nn.Dense(self.time_embed_dim),
-                h,
-                nn.Dense(self.time_embed_dim)
-            ])(cond_flat)
-            embed = npx.concatenate([embed, cond_embed], axis=-1)
-
-        x, x_uf = jax.flatten_util.ravel_pytree(x)
-        out_features = x.shape[-1]
-        for feat in self.features:
-            shift, scale = npx.split(nn.Dense(2*feat)(embed), 2, -1)
-            x = h(nn.Dense(feat)(x))
-            x = x * (1 + scale) + shift
-        x = nn.Dense(out_features)(x)
-        x = x_uf(x)
-        return x
-
-MLPLargeClassifier = partial(MLPClassifier, features=[512, 512, 128])
-MLPMediumClassifier = partial(MLPClassifier, features=[128, 128, 64])
-MLPSmallClassifier = partial(MLPClassifier, features=[64, 32, 32])
-
-DiffusionMLPLarge = partial(DiffusionMLP, features=[256, 128, 256])
-DiffusionMLPMedium = partial(DiffusionMLP, features=[128, 64, 128])
-DiffusionMLPSmall = partial(DiffusionMLP, features=[64, 32, 64])
-DiffusionMLPMicro = partial(DiffusionMLP, features=[16, 16, 16])
-
-def register(registry: Registry, prefix=None):
-    registry.register("classifier/mlp/large", MLPLargeClassifier, prefix=prefix)
-    registry.register("classifier/mlp/medium", MLPMediumClassifier, prefix=prefix)
-    registry.register("classifier/mlp/small", MLPSmallClassifier, prefix=prefix)
-
-    registry.register("diffusion/mlp/large", DiffusionMLPLarge, prefix=prefix)
-    registry.register("diffusion/mlp/medium", DiffusionMLPMedium, prefix=prefix)
-    registry.register("diffusion/mlp/small", DiffusionMLPSmall, prefix=prefix)
-    registry.register("diffusion/mlp/micro", DiffusionMLPMicro, prefix=prefix)
-
-    registry.register("diffusion/mlp/large/relu", partial(DiffusionMLPLarge, activation="relu"), prefix=prefix)
-    registry.register("diffusion/mlp/medium/relu", partial(DiffusionMLPMedium, activation="relu"), prefix=prefix)
-    registry.register("diffusion/mlp/small/relu", partial(DiffusionMLPSmall, activation="relu"), prefix=prefix)
+def register(registry: Registry[nn.Module], prefix=None):
+    registry.register("mlp", MLP)

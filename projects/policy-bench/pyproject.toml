@@ -1,0 +1,26 @@
+[project]
+name = "policy-bench"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Daniel Pfrommer", email = "dan.pfrommer@gmail.com"},
+]
+dependencies = [
+    "argon-core",
+    "argon-systems",
+    "argon-models",
+    "argon-algo",
+    "ml-collections>=1.0.0",
+]
+requires-python = ">=3.10"
+license = {text = "MIT"}
+
+[project.scripts]
+policy-bench = "policy_bench.main:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/policy_bench"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

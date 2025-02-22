@@ -2,6 +2,8 @@ import jax.random
 import jax.numpy
 import jax
 
+from flax.nnx import Rngs
+
 from jax.random import (
     key, split, fold_in,
     uniform, normal, bernoulli, randint,

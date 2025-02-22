@@ -1,34 +1,26 @@
 from argon.data import Data, PyTreeData, idx_dtype
-from argon.core.dataclasses import dataclass, field, replace
+from argon.struct import struct, replace
+
+import argon.numpy as npx
+import argon.tree as tree
+import argon.transforms as agt
+
+import numpy as np
 
 from typing import Any, Generic, TypeVar
-
-import jax.tree_util
-import argon.numpy as jnp
-import argon.core.tree as tree
-import numpy as np
 
 T = TypeVar('T')
 I = TypeVar('I')
 
-# For sequences of trajectories,
-# use this as the element type
-@dataclass
-class Step:
-    # either state or reduced_state must be set
-    state: Any | None
-    reduced_state: Any | None
-    observation: Any
-    action: Any
 
-@dataclass
+@struct(frozen=True)
 class SequenceInfo(Generic[I]):
     info: I
     start_idx: int
     end_idx: int
     length: int
 
-@dataclass
+@struct(frozen=True)
 class SequenceData(Generic[T,I]):
     elements: Data[T]
     # contains the start, end, length
@@ -84,9 +76,9 @@ class SequenceData(Generic[T,I]):
     def truncate(self, length: int) -> Data[T]:
         infos = self.sequences.as_pytree()
         mask = length <= infos.length
-        infos = jax.tree.map(lambda x: x[mask], infos)
+        infos = tree.map(lambda x: x[mask], infos)
         start_idx = infos.start_idx
-        elements = jax.vmap(
+        elements = agt.vmap(
             lambda x: self.elements.slice(x, length).as_pytree()
         )(start_idx)
         return PyTreeData(elements)
@@ -94,12 +86,12 @@ class SequenceData(Generic[T,I]):
     # convert to pytree if all sequences are the same length
     def as_pytree(self) -> tuple[I, T]:
         infos = self.sequences.as_pytree()
-        assert jnp.all(infos.length == infos.length[0])
+        assert npx.all(infos.length == infos.length[0])
         N = infos.length.shape[0]
         T = infos.length[0]
         elements = self.elements.as_pytree()
-        elements = jax.tree.map(
-            lambda x: jnp.reshape(x, (N, T) + x.shape[1:]),
+        elements = tree.map(
+            lambda x: npx.reshape(x, (N, T) + x.shape[1:]),
             elements
         )
         return elements, infos
@@ -110,9 +102,9 @@ class SequenceData(Generic[T,I]):
         infos = self.sequences.as_pytree()
         mask = infos.length < length
         def gen_indices(s_index, traj_len):
-            return s_index + jnp.minimum(jnp.arange(length), traj_len - 1)
-        indices = jax.vmap(gen_indices)(infos.start_idx, infos.length)
-        elements = jax.vmap(jax.vmap(lambda x: self.elements[x]))(indices)
+            return s_index + npx.minimum(npx.arange(length), traj_len - 1)
+        indices = agt.vmap(gen_indices)(infos.start_idx, infos.length)
+        elements = agt.vmap(agt.vmap(lambda x: self.elements[x]))(indices)
         return PyTreeData(elements)
 
     # Constructs a sliding window over the data!
@@ -121,18 +113,18 @@ class SequenceData(Generic[T,I]):
         total_chunks = 0
         infos = self.sequences.as_pytree()
         chunks = (infos.length - chunk_length + chunk_stride) // chunk_stride
-        chunks = jnp.maximum(0, chunks)
-        start_chunks = jnp.cumsum(chunks) - chunks
-        total_chunks = jnp.sum(chunks)
-        t_off, i_off = np.zeros((2, total_chunks), dtype=idx_dtype)
+        chunks = npx.maximum(0, chunks)
+        start_chunks = npx.cumsum(chunks) - chunks
+        total_chunks = npx.sum(chunks)
 
+        t_off, i_off = np.zeros((2, total_chunks), dtype=idx_dtype)
         for i in range(len(self.sequences)):
             idx = start_chunks[i]
             n_chunks = chunks[i]
             t_off[idx:idx+n_chunks] = infos.start_idx[i] + np.arange(n_chunks) * chunk_stride
             i_off[idx:idx+n_chunks] = i
             idx += n_chunks
-        t_off, i_off = jnp.array(t_off, dtype=idx_dtype), jnp.array(i_off, dtype=idx_dtype)
+        t_off, i_off = npx.array(t_off, dtype=idx_dtype), npx.array(i_off, dtype=idx_dtype)
 
         return ChunkData(
             elements=self.elements,
@@ -145,11 +137,11 @@ class SequenceData(Generic[T,I]):
     def from_trajectory(elements: Data[T], info: I = None) -> "SequenceData[T,I]":
         info = SequenceInfo(
             info=info,
-            start_idx=jnp.array(0, dtype=idx_dtype),
-            end_idx=jnp.array(len(elements), dtype=idx_dtype),
-            length=jnp.array(len(elements), dtype=idx_dtype)
+            start_idx=npx.array(0, dtype=idx_dtype),
+            end_idx=npx.array(len(elements), dtype=idx_dtype),
+            length=npx.array(len(elements), dtype=idx_dtype)
         )
-        sequences = PyTreeData(jax.tree.map(lambda x: x[None,...], info))
+        sequences = PyTreeData(tree.map(lambda x: x[None,...], info))
         return SequenceData(
             elements=elements,
             sequences=sequences
@@ -161,9 +153,9 @@ class SequenceData(Generic[T,I]):
         T = tree.axis_size(elements, 1)
         info = SequenceInfo(
             info=infos,
-            start_idx=T*jnp.arange(N, dtype=idx_dtype),
-            end_idx=T*(jnp.arange(N, dtype=idx_dtype) + 1),
-            length=jnp.full((N,), T, dtype=idx_dtype)
+            start_idx=T*npx.arange(N, dtype=idx_dtype),
+            end_idx=T*(npx.arange(N, dtype=idx_dtype) + 1),
+            length=npx.full((N,), T, dtype=idx_dtype)
         )
         sequences = PyTreeData(info)
         elements = PyTreeData(
@@ -174,13 +166,13 @@ class SequenceData(Generic[T,I]):
             sequences=sequences
         )
 
-@dataclass
+@struct(frozen=True)
 class Chunk(Generic[T,I]):
     seq_offset: int
     elements: T
     info: I
 
-@dataclass
+@struct(frozen=True)
 class ChunkData(Data, Generic[T,I]):
     elements: Data[T]
     sequences: Data[SequenceInfo[I]]
