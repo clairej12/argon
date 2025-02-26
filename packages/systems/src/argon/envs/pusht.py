@@ -129,8 +129,8 @@ class PushTEnv(MujocoEnvironment):
         return PushTAction(argon.random.normal(rng_key, (2,)))
     
     @agt.jit
-    def step(self, state: MujocoState, action: PushTAction, rng_key=None):
-        return super().step(self.mjx_model, state, action.agent_force)
+    def step(self, state: MujocoState, action: PushTAction, rng_key : atp.PRNGKey | None = None):
+        return super().step(state, action.agent_force)
 
     @agt.jit
     def is_finished(self, state: MujocoState):
@@ -243,11 +243,12 @@ class PositionControlEnv(EnvWrapper):
         return super().sample_action(rng_key)
 
     def step(self, state, action : PushTAgentPos, rng_key=None):
-        obs = self.base.observe(state, PushTObs())
+        obs = self.base.observe(state, config=FullObsConfig())
         if action is not None:
-            a = self.k_p * (action - obs.agent_pos) + self.k_v * (-obs.agent_vel)
+            a = self.k_p * (action.agent_pos - obs.agent_pos) + self.k_v * (-obs.agent_vel)
         else: 
             a = npx.zeros((2,), dtype=npx.float32)
+        a = PushTAction(a)
         return self.base.step(state, a, None)
 
 def register_all(registry, prefix=None):

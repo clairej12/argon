@@ -17,6 +17,7 @@ from argon.data import Data
 import typing as tp
 from ml_collections import ConfigDict
 
+import comet_ml
 import logging
 
 logger = logging.getLogger(__name__)
@@ -121,6 +122,7 @@ class DataConfig:
 
 @struct(frozen=True, kw_only=True)
 class Inputs:
+    experiment: comet_ml.Experiment
     env_timesteps: int
     rng: PRNGSequence
     env: Environment

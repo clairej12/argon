@@ -7,6 +7,8 @@ import argon.nn as nn
 import argon.numpy as npx
 import argon.transforms as agt
 import argon.graph
+import argon.tree
+import argon.random
 
 from flax.nnx import Optimizer
 
@@ -222,12 +224,17 @@ def batch_loss(loss_fn: LossFn):
 
 class TrainStep(Step[Sample], Generic[Sample]):
     def __init__(self, 
-                 step: Step[Sample], metrics: Metrics, sys_metrics: Metrics,
-                 graph_def: argon.graph.GraphDef, graph_state: argon.graph.GraphLeaves,
-                 model: nn.Module, optimizer: Optimizer):
+                    step: Step[Sample], metrics: Metrics, sys_metrics: Metrics,
+                    graph_def: argon.graph.GraphDef, graph_state: argon.graph.GraphLeaves,
+                    model: nn.Module, optimizer: Optimizer,
+                    gradient: argon.graph.GraphLeaves | None = None,
+                    grad_variance: Array | None = None
+                 ):
         super().__init__(step.batch, step.rng_key, step.epoch, step.epoch_iteration, step.iteration)
         self.metrics = metrics
         self.sys_metrics = sys_metrics
+        self.gradient = gradient
+        self.gradient_variance = grad_variance
 
         self._graph_def = graph_def
         self._graph_state = graph_state
@@ -252,11 +259,12 @@ def train_model(data: StreamBuilder[Sample],
                 loss: LossFn,
                 *,
                 iterations: int, rng_key: PRNGKey | None = None,
+                store_gradient: bool = False,
+                store_gradient_variance: bool = False,
                 is_batch_loss: bool = False):
-    if not is_batch_loss:
-        loss = batch_loss(loss)
     # Set the model to training mode
     model.train()
+    _loss = loss
 
     graphdef, state = argon.graph.split((model, optimizer))
 
@@ -266,14 +274,32 @@ def train_model(data: StreamBuilder[Sample],
              state: argon.graph.GraphLeaves, 
              rng_key: PRNGKey | None, batch: Sample):
         model, optimizer = argon.graph.merge(graphdef, state)
-        @agt.jit
-        def loss_fn(model, rng_key, batch):
-            output = loss(model, rng_key, batch)
-            return output.loss, output.metrics
-        grads, metrics = agt.grad(loss_fn, has_aux=True)(model, rng_key, batch)
+        if store_gradient_variance:
+            assert not is_batch_loss, "Cannot compute gradient variance with batched loss"
+            def loss_fn(model, rng_key, batch):
+                output = _loss(model, rng_key, batch)
+                return output.loss, output.metrics
+            batched_loss = agt.vmap(agt.grad(loss_fn, has_aux=True), in_axes=(None, 0, 0))
+            N = argon.tree.axis_size(batch)
+            rngs = argon.random.split(rng_key, N)
+            grads_raw, metrics = batched_loss(model, rngs, batch)
+            grads = argon.tree.map(lambda x: npx.mean(x,axis=0), grads_raw)
+            grad_variance = argon.tree.reduce(npx.add, argon.tree.map(
+                lambda x, m: npx.sum(npx.square(x - m[None,...])) / N, 
+                grads_raw, grads
+            ))
+        else:
+            @agt.jit
+            def loss_fn(model, rng_key, batch):
+                if not is_batch_loss: loss = batch_loss(_loss)
+                else: loss = _loss
+                output = loss(model, rng_key, batch)
+                return output.loss, output.metrics
+            grads, metrics = agt.grad(loss_fn, has_aux=True)(model, rng_key, batch)
+            grad_variance = None
         optimizer.update(grads)
         graphdef, state = argon.graph.split((model, optimizer))
-        return graphdef, state, metrics
+        return graphdef, state, metrics, (grads if store_gradient else None), grad_variance
 
     t = time.time()
     def _time():
@@ -293,10 +319,12 @@ def train_model(data: StreamBuilder[Sample],
                     "step_time": data_load_time + opt_time + eval_time
                 }
                 data_load_time = _time()
-                graphdef, state, metrics = train_step(graphdef, state, step.rng_key, step.batch)
+                graphdef, state, metrics, grads, grad_variance = train_step(
+                    graphdef, state, step.rng_key, step.batch
+                )
                 opt_time = _time()
                 tstep = TrainStep(step, metrics, sys_metrics,
-                        graphdef, state, model, optimizer)
+                        graphdef, state, model, optimizer, grads, grad_variance)
                 yield tstep
                 graphdef, state = tstep._graph_def, tstep._graph_state
                 eval_time = _time()

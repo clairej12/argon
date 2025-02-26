@@ -79,9 +79,8 @@ class EnvWrapper(Environment[State, ReducedState, Action, Observation]):
     def reward(self, state: State,
                action : Action, next_state : State) -> atyp.Array:
         return self.base.reward(state, action, next_state)
-    def trajectory_reward(self, state: State,
-               action : Action, next_state : State) -> atyp.Array:
-        return self.base.reward(state, action, next_state)
+    def trajectory_reward(self, states: State, actions : Action) -> atyp.Array:
+        return self.base.trajectory_reward(states, actions)
     def cost(self, states: State, actions: Action) -> atyp.Array:
         return self.base.cost(states, actions)
     def is_finished(self, state: State) -> atyp.Array:
@@ -121,7 +120,7 @@ class MultiStepEnv(EnvWrapper):
         def step_fn(state, key):
             state = self.base.step(state, action, key)
             return state, None
-        state, _ = agt.scan(step_fn, state, keys, length=self.steps)
+        state, _ = agt.scan(step_fn, length=self.steps)(state, keys)
         return state
 
 @struct(frozen=True)
@@ -167,5 +166,5 @@ class MultiStepEnv(EnvWrapper):
         def step_fn(state, key):
             state = self.base.step(state, action, key)
             return state, None
-        state, _ = agt.scan(step_fn, state, keys, length=self.steps)
+        state, _ = agt.scan(step_fn, length=self.steps)(state, keys)
         return state

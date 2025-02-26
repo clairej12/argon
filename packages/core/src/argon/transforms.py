@@ -1,11 +1,14 @@
 # Monkey-patch first!
 import argon.graph
+from argon.struct import struct
+
 from flax.nnx import (
     grad, value_and_grad,
     scan, vmap,
     StateSharding,
     eval_shape, switch, cond,
-    while_loop, fori_loop
+    while_loop, fori_loop,
+    Carry
 )
 from jax import pure_callback, devices
 
@@ -17,7 +20,6 @@ import jax
 from flax.typing import Missing
 from flax.nnx import extract, graph
 from flax.nnx.transforms.compilation import JitFn
-
 
 F = tp.TypeVar('F', bound=tp.Callable)
 
@@ -135,3 +137,18 @@ def jit(
 
   jit_wrapper.inner = jitted_fn  # type: ignore
   return jit_wrapper  # type: ignore
+
+
+@struct
+class Partial:
+  func: tp.Any
+  args: tp.Tuple | None
+  kwargs: tp.Dict[str, tp.Any] | None
+
+  def __call__(self, *args, **kwargs):
+    mod_kwargs = dict(self.kwargs)
+    mod_kwargs.update(kwargs)
+    return self.func(*self.args, *args, **mod_kwargs)
+
+def partial(func: F, *args, **kwargs) -> F:
+  return Partial(func, args, kwargs)

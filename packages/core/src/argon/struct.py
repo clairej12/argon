@@ -72,11 +72,15 @@ def struct(cls=None, frozen=False, kw_only=False):
         def clear(x):
             for f in fields:
                 setattr(x, f, MISSING)
+        
+        def init(x, keys):
+            for k, v in keys:
+                object.__setattr__(x, k, v)
 
         graph.register_graph_node_type(
           cls, flatten,
           set_key, pop_key,
-          create_empty, clear
+          create_empty, clear, init
         )
 
     return cls

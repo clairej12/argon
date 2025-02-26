@@ -1,5 +1,6 @@
 from typing import Any, Generic, Callable, TypeVar
 
+import argon.tree
 import jax.flatten_util
 import jax.tree
 

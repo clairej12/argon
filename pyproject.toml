@@ -5,12 +5,13 @@ authors = [
     {name = "Daniel Pfrommer", email = "dan.pfrommer@gmail.com"},
 ]
 dependencies = [
-    "argon-core",
+    "argon-core[comet]",
     "argon-systems[pusht,robomimic]",
     "argon-models",
     "argon-diffusion",
     "argon-algo",
-    "policy-bench"
+    "policy-bench",
+    "llm-trainer"
 ]
 requires-python = "==3.13.*"
 readme = "README.md"
@@ -23,6 +24,7 @@ argon-diffusion = { workspace = true }
 argon-models = { workspace = true }
 argon-algo = { workspace = true }
 policy-bench = { workspace = true }
+llm-trainer = { workspace = true }
 
 [tool.uv.workspace]
 members = ["packages/*", "projects/*"]

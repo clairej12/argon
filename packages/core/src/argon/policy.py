@@ -158,7 +158,6 @@ class Actions(Generic[Action]):
         )
         return lengths[0] + 1
 
-    @jax.jit
     def __call__(self, input : PolicyInput) -> PolicyOutput[Action, jax.Array, None]:
         T = input.policy_state if input.policy_state is not None else 0
         action = jax.tree.map(lambda x: x[T], self.actions)

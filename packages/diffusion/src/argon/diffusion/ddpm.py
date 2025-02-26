@@ -13,7 +13,7 @@ from typing import Optional, TypeVar, Callable
 
 Sample = TypeVar("Sample")
 
-@struct(frozen=True)
+@struct
 class DDPMSchedule:
     """A schedule for a DDPM model. Implements https://arxiv.org/abs/2006.11239. """
     betas: jax.Array
@@ -147,14 +147,14 @@ class DDPMSchedule:
                 The 0th index corresponds to x_0, the 1st index corresponds to x_1, and so on.
         """
         sample_flat, unflatten = jax.flatten_util.ravel_pytree(sample)
-        unfaltten_vmap = jax.vmap(unflatten)
+        unfaltten_vmap = agt.vmap(unflatten)
         noise_flat = jax.random.normal(rng_key, (self.num_steps + 1,) + sample_flat.shape)
         # sum up the noise added at each step
         def scan_fn(prev_noise_accum, noise_beta):
             noise, alpha, beta = noise_beta
             noise_accum = npx.sqrt(alpha)*prev_noise_accum + noise*npx.sqrt(beta)
             return noise_accum, noise_accum
-        noise_flat = jax.lax.scan(scan_fn, npx.zeros_like(noise_flat[0]),
+        noise_flat = agt.scan(scan_fn, npx.zeros_like(noise_flat[0]),
                                   (noise_flat, self.alphas, self.betas))[1]
         noisy_flat = noise_flat + npx.sqrt(self.alphas_cumprod[:,None])*sample_flat[None,:]
         noise = unfaltten_vmap(noise_flat)
@@ -360,43 +360,32 @@ class DDPMSchedule:
         else:
             flat_structure, unflatten = argon.tree.ravel_pytree(argon.tree.map(lambda x: npx.zeros_like(x), sample_structure))
             random_sample = unflatten(jax.random.normal(rng_key, flat_structure.shape, flat_structure.dtype))
+        # If we want to return the trajectory, do a scan. In that case, num_steps must be statically known
+        timesteps = (npx.arange(0, num_steps + 1) * step_ratio + final_time).round()[::-1].astype(npx.int32)
+        curr_timesteps, prev_timesteps = timesteps[:-1], timesteps[1:]
 
-        def do_step(carry, curr_T, prev_T):
-            rng_key, x_t = carry
+        @agt.scan(in_axes=(None, None, 0, 0, agt.Carry))
+        def step(self, model, curr_t, prev_t, carry):
+            x_t, rng_key = carry
             m_rng, s_rng, n_rng = jax.random.split(rng_key, 3)
-            model_output = model(m_rng, x_t, curr_T)
-            x_prev = self.reverse_step(s_rng, x_t, curr_T, curr_T - prev_T, model_output, eta=eta)
-            return (n_rng, x_prev)
+            model_output = model(m_rng, x_t, curr_t)
+            x_prev = self.reverse_step(s_rng, x_t, curr_t, curr_t - prev_t, 
+                                    model_output, eta=eta)
+            return (x_prev, n_rng), x_prev
 
+        (sample, _), traj = step(self, model, 
+                            curr_timesteps, prev_timesteps, 
+                            (random_sample, rng_key))
+
+        traj = argon.tree.map(
+            lambda x, s: npx.concatenate((x, s[None]), axis=0), 
+            traj, random_sample
+        )
         if trajectory:
-            # If we want to return the trajectory, do a scan. In that case, num_steps must be statically known
-            timesteps = (npx.arange(0, num_steps + 1) * step_ratio + final_time).round()[::-1].astype(npx.int32)
-            curr_timesteps, prev_timesteps = timesteps[:-1], timesteps[1:]
-            def step(carry, timesteps):
-                rng_key, x_t = carry
-                curr_T, prev_T = timesteps
-                n_rng, x_prev = do_step(carry, curr_T, prev_T)
-                return (n_rng, x_prev), x_prev
-            carry, out = jax.lax.scan(step, (rng_key, random_sample), (curr_timesteps, prev_timesteps))
-            _, sample = carry
-            # add the initial noise to the front of the scan output
-            out = jax.tree_map(lambda x, y: npx.concatenate(
-                                [npx.expand_dims(x,axis=0), y], axis=0
-                            ), random_sample, out)
-            # reverse the trajectory along the time axis
-            # so that traj[0] = x_0, traj[T] = x_T
-            traj = jax.tree_map(lambda x: x[::-1, ...], out)
             return sample, traj
         else:
-            def loop_step(i, carry):
-                curr_T = npx.round((start_time - i)*step_ratio).astype(npx.int32)
-                prev_T = npx.round((start_time - i - 1)*step_ratio).astype(npx.int32)
-                return do_step(carry, curr_T, prev_T)
-            carry = (rng_key, random_sample)
-            start_time = start_time if start_time is not None else num_steps
-            carry = jax.lax.fori_loop(0, num_steps, loop_step, carry)
-            _, sample = carry
             return sample
+
 
     def loss(self, rng_key : jax.Array,
              model : Callable[[jax.Array, Sample, jax.Array], Sample],

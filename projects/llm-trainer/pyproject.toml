@@ -1,0 +1,26 @@
+[project]
+name = "llm-trainer"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Daniel Pfrommer", email = "dan.pfrommer@gmail.com"},
+]
+dependencies = [
+    "argon-core",
+    "argon-systems",
+    "argon-models",
+    "argon-algo",
+    "ml-collections>=1.0.0",
+]
+requires-python = ">=3.10"
+license = {text = "MIT"}
+
+[project.scripts]
+llm-trainer = "llm_trainer.main:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llm_trainer"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -32,6 +32,7 @@ class ResNetBlock(nn.Module):
             kernel_size = (kernel_size,)
         if isinstance(strides, int):
             strides = (strides,) * len(kernel_size)
+        self.spatial_dims = len(kernel_size)
 
         self.activation = activation
         self.operation = operation
@@ -44,7 +45,6 @@ class ResNetBlock(nn.Module):
                 activation,
                 nn.Linear(cond_features, 2*out_channels if use_film else out_channels, rngs=rngs),
             )
-
         self.norm_a = norm(in_channels, rngs=rngs)
         self.norm_b = norm(out_channels, rngs=rngs)
 
@@ -64,9 +64,13 @@ class ResNetBlock(nn.Module):
             )
 
     def __call__(self, x, cond=None, target_shape=None):
+        assert len(x.shape) == self.spatial_dims + 1
         residual = x
 
-        h = self.norm_a(x)
+        h = x
+        h = h[None, ...]
+        h = self.norm_a(h)
+        h = npx.squeeze(h, axis=0)
         h = self.activation(h)
 
         if self.operation is not None:

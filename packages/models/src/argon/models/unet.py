@@ -35,7 +35,7 @@ def _qkv_attention(q,k,v, n_heads):
     return a
 
 class AttentionBlock(nn.Module):
-    def __init__(self, channels: int,
+    def __init__(self, channels: int, spatial_dims: int,
                  num_heads: int | None = None,
                  num_head_channels: int | None = None, *,
                  norm: NormDef = nn.GroupNorm,
@@ -46,6 +46,11 @@ class AttentionBlock(nn.Module):
 
     def __call__(self, x : atp.Array):
         spatial_shape = x.shape[:-1]
+
+        x = x[None, ...]
+        x = self.norm(x)
+        x = npx.squeeze(x, axis=0)
+
         T = math.prod(spatial_shape)
         F = x.shape[-1]
         x = x.reshape(T, F)
@@ -82,8 +87,11 @@ class UNet(nn.Module):
             if spatial_dims is None:
                 raise ValueError("spatial_dims must be provided if kernel_size is an int")
             kernel_size = (kernel_size,) * spatial_dims
-        else:
+        elif spatial_dims is not None:
             assert len(kernel_size) == spatial_dims
+        else:
+            spatial_dims = len(kernel_size)
+
         if isinstance(blocks_per_level, int):
             blocks_per_level = (blocks_per_level,) * len(channel_mults)
         else:
@@ -92,7 +100,7 @@ class UNet(nn.Module):
         ResBlock = functools.partial(ResNetBlock,
                     kernel_size=kernel_size, dropout=dropout, cond_features=embed_features,
                     activation=activation, conv=conv, norm=norm, rngs=rngs)
-        AttenBlock = functools.partial(AttentionBlock, rngs=rngs)
+        AttenBlock = functools.partial(AttentionBlock, spatial_dims=spatial_dims, rngs=rngs)
 
         self.embed = embed
         self.input_conv = conv(in_channels, model_channels, kernel_size, rngs=rngs)
@@ -150,9 +158,10 @@ class UNet(nn.Module):
                     level_blocks.append(nn.upsample)
                 ds //= 2
             self.output_blocks.append(CondSequential(*level_blocks))
-
         self.out_final = nn.Sequential(
+            lambda x: x[None, ...],
             norm(model_channels, rngs=rngs),
+            lambda x: npx.squeeze(x, axis=0),
             activation,
             conv(model_channels, out_channels, kernel_size, rngs=rngs)
         )
@@ -173,17 +182,7 @@ class UNet(nn.Module):
             target_shape = target_shapes.pop()
             x = npx.concatenate([x, skip_x], axis=-1)
             x = block(x, cond=cond, target_shape=target_shape)
-        y = x
-        # x = self.out_final.layers[0](x)
-        # z = x
-        # x = self.out_final.layers[1](x)
-        # x = self.out_final.layers[2](x)
-        # jax.debug.print("{} {} {}", npx.linalg.norm(y), 
-        #     npx.linalg.norm(z), npx.linalg.norm(z))
-        y = x
-        # x = self.out_final.layers[0](x)
-        x = self.out_final.layers[1](x)
-        x = self.out_final.layers[2](x)
+        x  = self.out_final(x)
         return x
 import jax.debug
 def register(registry: Registry[nn.Module]):

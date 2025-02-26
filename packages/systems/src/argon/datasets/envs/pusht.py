@@ -7,7 +7,7 @@ from argon.data.sequence import (
 )
 from argon.datasets.util import download, cache_path
 from argon.envs.pusht import (
-    PushTEnv,
+    PushTEnv, PushTAgentPos,
     PositionControlTransform,
     PositionObsConfig, KeypointObsConfig,
     RelKeypointObsConfig, FullObsConfig
@@ -84,7 +84,7 @@ def load_pytorch_pusht_data(zarr_path, max_trajectories=None):
         )
     @jax.vmap
     def convert_actions(action):
-        return action / 256 - 1
+        return PushTAgentPos(action / 256 - 1)
     steps = Step(
         state=None,
         reduced_state=convert_states(jnp.array(data["state"][:last_end], dtype=jnp.float32)),

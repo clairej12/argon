@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import argon.store
+import argon.store.comet
+import argon.store.console
 import argon.random
 import argon.numpy as npx
 import argon.typing as atyp
@@ -24,6 +27,8 @@ from .util import setup_logging, parse_options, setup_cache
 
 from functools import partial
 from ml_collections import ConfigDict
+
+import comet_ml
 
 import functools
 import logging
@@ -77,7 +82,6 @@ class Config:
             log_compiles=dict.log_compiles
         )
 
-
 @agt.jit
 def policy_rollout(env, T, x0, rng_key, policy):
     r_policy, r_env = argon.random.split(rng_key)
@@ -120,9 +124,13 @@ def run():
     logging.getLogger("policy_bench").setLevel(logging.DEBUG)
 
     dict = Config.default_dict()
+    method_name = dict.method
     parse_options(dict)
     config = Config.from_dict(dict)
     logger.info(f"Running {config}")
+
+    experiment = comet_ml.start(project_name="policy-bench")
+    logger.info(f"Experiment: {experiment.url}")
     logger.info(f"Devices: {agt.devices()}")
     jax_context = jax.log_compiles() if config.log_compiles else contextlib.nullcontext()
     with jax_context:
@@ -140,14 +148,13 @@ def run():
         env, splits = config.data_config.load(dataset, {"validation"})
         validation_data = splits["validation"].as_pytree()
         N_validation = argon.tree.axis_size(validation_data, 0)
-
         # validation trajectories
         validate_fn = functools.partial(
             validate, env, config.env_timesteps,
             validation_data
         )
-
         inputs = Inputs(
+            experiment=experiment,
             env_timesteps=config.env_timesteps,
             rng=PRNGSequence(train_key),
             env=env,
@@ -171,5 +178,9 @@ def run():
                 f"{q:03}": v for (q, v) in zip(q, quantiles)
             },
         }
-        for k, v in outputs.items():
-            logger.info(f"{k}: {v}")
+        argon.store.comet.log(experiment, None, outputs)
+        argon.store.console.log(None, outputs)
+        artifact = argon.store.comet.to_artifact(name=method_name, artifact_type="policy", data=final_result)
+        experiment.log_artifact(artifact)
+        experiment.end()
+        argon.store.dump(final_result, "final_result.zarr")

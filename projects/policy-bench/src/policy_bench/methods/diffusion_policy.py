@@ -5,10 +5,13 @@ from argon.diffusion import DDPMSchedule
 from argon.random import PRNGSequence
 from argon.policy import Policy, PolicyInput, PolicyOutput, ChunkingTransform
 
+from argon.graph import GraphLeaves
+
 from argon.data.normalizer import Normalizer, LinearNormalizer, StdNormalizer
 from argon import train
 
 import argon.store.console
+import argon.store.comet
 import argon.tree
 import argon.nn as nn
 import argon.numpy as npx
@@ -94,6 +97,14 @@ class UNetConfig:
             rngs=rngs
         )
         return model
+    
+    def load_model(self, model_state : GraphLeaves, 
+                    obs_structure, action_structure) -> nn.Module:
+        abstract_model = agt.eval_shape(lambda: UNetDiffuser(
+            obs_structure, action_structure, rngs=nn.Rngs(42)
+        ))
+        graphdef, _ = argon.graph.split(abstract_model)
+        return argon.graph.merge(graphdef, model_state)
 
 @struct(frozen=True)
 class DiffusionPolicyTrainer(Method):
@@ -171,16 +182,21 @@ class DiffusionPolicyTrainer(Method):
         logger.info(f"Total parameters: {total_params}")
 
         def make_checkpoint(model) -> DiffusionPolicy:
+            model_state = argon.graph.split(model)[1]
             return DiffusionPolicy(
                 data=inputs.data,
+                observations_structure=obs_structure,
+                actions_structure=action_structure,
+                model_config=self.model_config,
+                model_state=model_state,
                 action_horizon=action_horizon,
-                model=model,
                 schedule=schedule,
                 obs_normalizer=normalizer.map(lambda x: x.observations),
                 action_normalizer=normalizer.map(lambda x: x.actions),
             )
 
-        normalizer = StdNormalizer.from_data(train_data)
+        # normalizer = StdNormalizer.from_data(train_data)
+        normalizer = LinearNormalizer.from_data(train_data)
 
         epoch_iterations = len(train_data) // self.batch_size
         if self.epochs is not None:
@@ -204,7 +220,6 @@ class DiffusionPolicyTrainer(Method):
         def loss_fn(model : nn.Module, rng_key, sample: Sample):
             sample = normalizer.normalize(sample)
             actions, obs = sample.actions, sample.observations
-            actions = argon.tree.map(lambda x: npx.zeros_like(x), actions)
             denoiser = lambda rng_key, noised_actions, t: model(
                 obs, rng_key, noised_actions, t
             )
@@ -220,17 +235,19 @@ class DiffusionPolicyTrainer(Method):
         )
         for step in train.train_model(train_data.stream().batch(self.batch_size).shuffle(shuffle_rng), model, optimizer, loss_fn,
                                iterations=total_iterations, rng_key=train_rng):
+            argon.store.comet.log(inputs.experiment, step.iteration, step.metrics)
             if step.iteration % 100 == 0:
                 argon.store.console.log(step.iteration, step.metrics)
-                argon.store.console.log(step.iteration, step.sys_metrics)
-            if step.iteration % 1000 != 0:
-                continue
+                argon.store.console.log(step.iteration, step.sys_metrics, prefix="sys.")
         return make_checkpoint(model)
 
 @struct(frozen=True)
 class DiffusionPolicy(Result):
     data: DataConfig # dataset this model was trained on
-    model: nn.Module
+    observations_structure: Observation
+    actions_structure: Action
+    model_config: ModelConfig
+    model_state: GraphLeaves
     schedule: DDPMSchedule
     action_horizon: int
 
@@ -243,18 +260,19 @@ class DiffusionPolicy(Result):
         )
 
     def create_policy(self) -> Policy:
-        actions_structure = self.model.actions_structure
-        observations_structure = self.model.observations_structure
+        actions_structure = self.actions_structure
+        observations_structure = self.observations_structure
+        model = self.model_config.load_model(self.model_state, 
+                    observations_structure, actions_structure)
         def chunk_policy(input: PolicyInput) -> PolicyOutput:
             s_rng, n_rng = argon.random.split(input.rng_key)
             obs = input.observation
             obs = self.obs_normalizer.normalize(obs)
-            model_fn = lambda rng_key, noised_actions, t: self.model(
-                obs, rng_key, noised_actions, t - 1
-            )
+            model_fn = agt.partial(model, obs)
             action = self.schedule.sample(s_rng, model_fn, actions_structure)
             action = self.action_normalizer.unnormalize(action)
-            return PolicyOutput(action=action[:self.action_horizon], info=action)
+            action = argon.tree.map(lambda x: x[:self.action_horizon], action)
+            return PolicyOutput(action=action, info=action)
         obs_horizon = argon.tree.axis_size(observations_structure, 0)
         return ChunkingTransform(
             obs_horizon, self.action_horizon
