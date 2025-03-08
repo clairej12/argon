@@ -19,8 +19,14 @@ An example of a sampling class for a Gemma model.
 
 from __future__ import annotations
 
+import argon.nn as nn
+import argon.transforms as agt
+import argon.typing as atp
+
 from collections.abc import Sequence
 import dataclasses
+
+import tokenizers
 
 import chex
 from flax import nnx
@@ -115,8 +121,7 @@ class Sampler:
 
   def __init__(
       self,
-      transformer: transformer_lib.Transformer,
-      vocab, #spm.SentencePieceProcessor,
+      tokenizer : tokenizers.Tokenizer,
       cache_size: int = 1024,
   ):
     """Initializes a sampler for a Gemma model.
@@ -126,22 +131,24 @@ class Sampler:
       vocab: vocabulary of the given model.
       cache_size: size of the cache for the transformer.
     """
-    self.transformer = transformer
-    self.vocab = vocab
+    self.tokenizer = tokenizer
     self.cache_size = cache_size
-    self._compiled_sample_fn = jax.jit(self._sample_fn)
+    self._compiled_sample_fn = agt.jit(self._sample_fn)
 
-  @property
-  def dtype(self) -> jnp.dtype:
-    params_state = nnx.state(self.transformer, nnx.Param)
-    return jax.tree_util.tree_leaves(nnx.to_flat_state(params_state))[0].dtype
+  def dtype(self, transformer) -> jnp.dtype:
+    params_state = nnx.state(transformer, nnx.Param)
+    return jax.tree_util.tree_leaves(params_state.flat_state())[0].dtype
 
-  def _sample_step(self, sampler_state: _SamplingState) -> _SamplingState:
+  def _sample_step(self, transformer: nn.Module, sampler_state: _SamplingState) -> _SamplingState:
     """Performs a single sampling step."""
     batch_size = sampler_state.token_buffer.shape[0]
     decoding_step = jnp.asarray(sampler_state.decoding_step, dtype=jnp.int32)
     last_token = sampler_state.token_buffer[:, decoding_step]
-    input_mask = sampler_state.token_buffer == self.vocab.pad_id()
+    padding_id = self.tokenizer.padding['pad_id']
+    if self.tokenizer.padding:
+      input_mask = sampler_state.token_buffer == padding_id
+    else:
+      input_mask = jnp.ones(sampler_state.token_buffer.shape, dtype=jnp.bool)
     attention_mask = _compute_attention_masks(
         decoding_step, self.cache_size, input_mask
     )
@@ -150,7 +157,7 @@ class Sampler:
     )
     last_token = last_token.reshape((batch_size, 1))
 
-    logits, cache = self.transformer(
+    logits, cache = transformer(
         last_token,
         step_positions,
         sampler_state.cache,
@@ -181,10 +188,11 @@ class Sampler:
       logits_buffer = sampler_state.logits_buffer
 
     if sampler_state.intermediates is not None:
-      sampler_state.intermediates.merge(decoding_step, self.transformer)
+      sampler_state.intermediates.merge(decoding_step, transformer)
 
+    eos_id = self.tokenizer.token_to_id("[EOS]")
     done = sampler_state.done | jnp.equal(
-        token_buffer[:, decoding_step + 1], self.vocab.eos_id()
+        token_buffer[:, decoding_step + 1], eos_id
     )
 
     return _SamplingState(
@@ -202,6 +210,7 @@ class Sampler:
 
   def init_sample_state(
       self,
+      transformer: transformer_lib.Transformer,
       all_input_ids: list[jax.Array],
       total_sampling_steps: int,
       include_logits: bool = False,
@@ -212,12 +221,13 @@ class Sampler:
     num_input_tokens = [len(input_ids) for input_ids in all_input_ids]
     buffer_size = total_sampling_steps + 1
 
+    padding_id = self.tokenizer.padding['pad_id']
     token_buffer = jnp.full(
         (
             batch_size,
             buffer_size,
         ),
-        self.vocab.pad_id(),
+        padding_id,
         dtype=jnp.int32,
     )
     input_mask = jnp.ones_like(token_buffer, dtype=jnp.bool_)
@@ -226,7 +236,7 @@ class Sampler:
     ):
       token_buffer = token_buffer.at[i, :num_tokens].set(input_ids)
       input_mask = input_mask.at[i, :num_tokens].set(
-          input_ids != self.vocab.pad_id()
+          input_ids != padding_id
       )
     positions = transformer_lib.build_positions_from_mask(input_mask)
 
@@ -234,7 +244,7 @@ class Sampler:
 
     if include_logits:
       logits_buffer = jnp.zeros(
-          (batch_size, buffer_size, self.transformer.num_embed),
+          (batch_size, buffer_size, transformer.num_embed),
           dtype=jnp.float32,
       )
     else:
@@ -246,30 +256,31 @@ class Sampler:
         token_buffer=token_buffer,
         positions=positions,
         logits_buffer=logits_buffer,
-        cache=self.transformer.init_cache(
+        cache=transformer.init_cache(
             cache_size=self.cache_size,
             batch_size=batch_size,
-            dtype=self.dtype,
+            dtype=self.dtype(transformer),
         ),
         done=done,
         total_sampling_steps=total_sampling_steps,
         forbidden_token_ids=forbidden_token_ids,
-        intermediates=self.transformer.init_intermediates(
-            batch_size, buffer_size, self.transformer.sow_config
+        intermediates=transformer.init_intermediates(
+            batch_size, buffer_size, transformer.sow_config
         ),
     )
 
   def tokenize(self, input_string: str) -> jax.Array:
     """Tokenizes the input string."""
-    input_ids = self.vocab.EncodeAsIds(input_string)
+    input_ids = self.tokenizer.encode(input_string).ids
+    bos_id = self.tokenizer.token_to_id("[BOS]")
     input_ids = jnp.array(
-        [self.vocab.bos_id()] + jnp.array(input_ids).tolist(), dtype=jnp.int32
+        [bos_id] + jnp.array(input_ids).tolist(), dtype=jnp.int32
     )
     return input_ids
 
   def mask_tokens_after_eos_ids(self, token_buffer):
     """Mask token IDs after the EOS token with the padding ID."""
-    eos_id = self.vocab.eos_id()
+    eos_id = self.tokenizer.token_to_id("[EOS]")
     eos_exists = jnp.any(jnp.equal(token_buffer, eos_id), axis=-1)
     eos_indices = jnp.where(
         eos_exists,
@@ -279,31 +290,31 @@ class Sampler:
     mask = jnp.less_equal(
         jnp.arange(token_buffer.shape[-1]), eos_indices[:, None]
     )
-    masked_token_buffer = token_buffer * mask + self.vocab.pad_id()*(1 - mask)
 
+    padding_id = self.tokenizer.padding['pad_id']
+    masked_token_buffer = token_buffer * mask + padding_id*(1 - mask)
     return masked_token_buffer
 
   def _sample_fn(
-      self,
+      self, transformer: transformer_lib.Transformer,
       initial_sampling_state: _SamplingState,
   ) -> _SamplingState:
     """Internal sampling function (to be jitted)."""
-
-    def sample_with_params(sampler_state: _SamplingState):
-      return self._sample_step(sampler_state)
-
+    def sample_with_params(state):
+      model, sampler_state = state
+      return model, self._sample_step(model, sampler_state)
     def cond_fn(sampler_state: _SamplingState):
+      sampler_state = sampler_state[1]
       return (
           sampler_state.decoding_step < sampler_state.total_sampling_steps
       ) & jnp.any(jnp.logical_not(sampler_state.done))
-
-    return jax.lax.while_loop(
-        cond_fn, sample_with_params, initial_sampling_state
-    )
+    state = agt.while_loop(cond_fn, sample_with_params, (transformer, initial_sampling_state))
+    return state[1]
 
   def __call__(
       self,
-      input_strings: Sequence[str],
+      transformer: transformer_lib.Transformer,
+      prompts : Sequence[str] | atp.Array,
       total_generation_steps: int,
       echo: bool = False,
       return_logits: bool = True,
@@ -327,24 +338,28 @@ class Sampler:
     if forbidden_tokens is not None:
       forbidden_token_ids = []
       for token in forbidden_tokens:
-        token_id = self.vocab.EncodeAsIds(token)
+        token_id = self.tokenizer.token_to_id(token)
         if len(token_id) != 1:
           raise ValueError(
               'Forbidden tokens must map to single token ids in the vocab.'
           )
         forbidden_token_ids.extend(token_id)
       forbidden_token_ids = tuple(forbidden_token_ids)
-    all_input_ids = [self.tokenize(x) for x in input_strings]
+    if isinstance(prompts, atp.Array):
+      all_input_ids = prompts
+    else:
+      all_input_ids = [self.tokenize(x) for x in prompts]
     max_input_length = max(len(input_ids) for input_ids in all_input_ids)
     total_sampling_steps = max_input_length + total_generation_steps
     initial_sampling_state = self.init_sample_state(
+        transformer,
         all_input_ids,
         include_logits=return_logits,
         total_sampling_steps=total_sampling_steps,
         forbidden_token_ids=forbidden_token_ids,
     )
 
-    sampling_state = self._compiled_sample_fn(initial_sampling_state)
+    sampling_state = self._compiled_sample_fn(transformer, initial_sampling_state)
 
     masked_token_buffer = self.mask_tokens_after_eos_ids(
         sampling_state.token_buffer
@@ -365,8 +380,13 @@ class Sampler:
         out_logits.append(
             logits_buffer[start_idx:total_sampling_steps].tolist()
         )
-
-    decoded_outputs = [self.vocab.DecodeIds(tokens) for tokens in out_tokens]
+    decoded_outputs = [
+      self.tokenizer.decode(
+        (prompt.tolist() if isinstance(prompt, atp.Array) else prompt) 
+        + gen_tokens
+      )
+      for prompt, gen_tokens in zip(all_input_ids, out_tokens)
+    ]
 
     if sampling_state.intermediates is not None:
       sampling_state.intermediates.trim(total_sampling_steps)

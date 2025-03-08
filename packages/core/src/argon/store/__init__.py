@@ -212,7 +212,7 @@ def load(store : StoreLike, *,
                 leaves[key] = _unflatten_state(value)
             elif isinstance(value, zarr.Array):
                 if "dtype" in value.attrs and value.attrs["dtype"] == "prng_key":
-                    leaves[key] = jax.random.wrap_key_data(value)
+                    leaves[key] = jax.random.wrap_key_data(npx.array(value))
                 else:
                     leaves[key] = value if lazy else npx.array(value)
         return leaves

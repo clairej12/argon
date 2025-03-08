@@ -1,6 +1,7 @@
 import dataclasses as dcls
 import functools
 import typing
+import types
 
 import argon.tree
 import argon.typing as atyp
@@ -35,11 +36,20 @@ def struct(cls=None, frozen=False, kw_only=False):
         def flatten(x):
             children  = {f: getattr(x, f) for f in fields}
             children = sorted(children.items())
-            return children, None
-        def unflatten(children, _):
+            filter = lambda x: isinstance(x, (str, types.FunctionType, types.MethodType))
+            attrs_filtered = [(k,v) for k,v in children if filter(v)]
+            children_filtered = [(k,v) for k,v in children if not filter(v)]
+            if attrs_filtered:
+                return children_filtered, attrs_filtered
+            else:
+                return children_filtered, None
+        def unflatten(children, aux):
             o = cls.__new__(cls)
             for f, v in children:
                 object.__setattr__(o, f, v)
+            if aux is not None:
+                for f, v in aux:
+                    object.__setattr__(o, f, v)
             return o
         graph.register_pytree_node_type(
             cls, flatten, unflatten

@@ -9,12 +9,12 @@ from functools import partial
 class MLP(nn.Module):
     def __init__(self, in_features: int, out_features: int, 
                     hidden_features: typ.Sequence[int],
-                    activation: str = "relu", *, rngs: nn.Rngs):
+                    activation: activations.relu, *, rngs: nn.Rngs):
         features = (in_features,) + tuple(hidden_features) + (out_features,)
         self.layers = tuple(
             nn.Linear(i, o, rngs=rngs) for i, o in zip(features[:-1], features[1:])
         )
-        self.activation = getattr(activations, activation)
+        self.activation = activation
 
     def __call__(self, x: atyp.Array):
         assert x.ndim == 1

@@ -18,24 +18,31 @@ class RelaxedSinkhornState:
 
 @struct(frozen=True)
 class RelaxedSinkhorn:
-    relaxation_factor: float = 0.0
-    max_iterations: int = 100,
-    epsilon: float = 1e-3
-    tolerance: float = 1e-3,
+    relaxation_factor: float = 1.0
+    max_iterations: int = 100
+    epsilon: float = 1e-5
+    tolerance: float = 1e-3
     enforce_total_mass: bool = True
 
     @agt.jit
-    def solve(self, log_p1, log_p2, C):
+    def solve(self, C, log_p1=None, log_p2=None):
+        if log_p1 is None:
+            log_p1 = npx.zeros(C.shape[0])
+        if log_p2 is None:
+            log_p2 = npx.zeros(C.shape[1])
+        
         # normalize the log_p1 and log_p2 just in case
         log_p1 = log_p1 - spx.special.logsumexp(log_p1)
         log_p2 = log_p2 - spx.special.logsumexp(log_p2)
-        log_p1_min, log_p1_max = log_p1 - self.relaxation_factor, log_p1 + self.relaxation_factor
-        log_p2_min, log_p2_max = log_p2 - self.relaxation_factor, log_p2 + self.relaxation_factor
+        log_rf = npx.log(self.relaxation_factor)
+        log_p1_min, log_p1_max = log_p1 - log_rf, log_p1 + log_rf
+        log_p2_min, log_p2_max = log_p2 - log_rf, log_p2 + log_rf
 
         K = -C / self.epsilon
         K = K - spx.special.logsumexp(K, axis=-1, keepdims=True)
         state = RelaxedSinkhornState(
             npx.zeros((), dtype=npx.uint32),
+            npx.array(npx.inf),
             K, npx.zeros_like(K), npx.zeros_like(K),
             npx.zeros_like(K), npx.zeros_like(K),
             npx.zeros_like(K) if self.enforce_total_mass else None,
@@ -77,8 +84,10 @@ class RelaxedSinkhorn:
                 log_q_total
             )
         final = agt.while_loop(
-            lambda s: npx.logical_or(s.iteration > self.max_iterations, s.err < self.tolerance),
-            _step, state
+            lambda s: npx.logical_or(
+                s.iteration > self.max_iterations,
+                s.err < self.tolerance
+            ), _step, state
         )
         final_cost = npx.sum(npx.exp(final.log_K) * C)
         return final_cost, final.log_K

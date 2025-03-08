@@ -24,9 +24,9 @@ def register(registry):
     ))
     registry.register("ops/add_mul", functools.partial(
         OperationsDataset, ops=["*", "+"],
-        ops_schedule=lambda i, total: npx.array([i/total, 1-i/total])
+        ops_schedule=lambda i, total: npx.array([i/(2*total), 1-i/(2*total)])
     ))
     registry.register("ops/mul_add", functools.partial(
         OperationsDataset, ops=["+", "*"], 
-        ops_schedule=lambda i, total: npx.array([i/total, 1-i/total])
+        ops_schedule=lambda i, total: npx.array([i/(2*total), 1-i/(2*total)])
     ))

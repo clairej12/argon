@@ -8,7 +8,7 @@ import argon.numpy as npx
 import argon.typing as atyp
 import argon.transforms as agt
 import argon.tree
-import os
+import argon.policy
 
 from argon.struct import struct
 from argon.data.sequence import Chunk
@@ -86,7 +86,7 @@ class Config:
 def policy_rollout(env, T, x0, rng_key, policy):
     r_policy, r_env = argon.random.split(rng_key)
     rollout = argon.policy.rollout(
-        env.step, x0,
+        agt.partial(env.step), x0,
         policy, observe=env.observe,
         model_rng_key=r_env,
         policy_rng_key=r_policy,
@@ -163,9 +163,16 @@ def run():
             validate=validate_fn,
         )
         final_result = config.method.run(inputs)
-        final_policy = final_result.create_policy()
-
+        artifact_name = f"{config.data_config.dataset}/{method_name}"
+        artifact_name = artifact_name.replace("/", "-")
+        artifact = argon.store.comet.to_artifact(
+            name=artifact_name,
+            artifact_type="model",
+            data=final_result
+        )
+        experiment.log_artifact(artifact)
         logger.info("Running validation for final policy...")
+        final_policy = final_result.create_policy()
         rewards = validate_fn(eval_key, final_policy)
         mean_reward = npx.mean(rewards)
         std_reward = npx.std(rewards)
@@ -180,7 +187,4 @@ def run():
         }
         argon.store.comet.log(experiment, None, outputs)
         argon.store.console.log(None, outputs)
-        artifact = argon.store.comet.to_artifact(name=method_name, artifact_type="policy", data=final_result)
-        experiment.log_artifact(artifact)
         experiment.end()
-        argon.store.dump(final_result, "final_result.zarr")

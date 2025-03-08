@@ -13,7 +13,7 @@ from typing import Optional, TypeVar, Callable
 
 Sample = TypeVar("Sample")
 
-@struct
+@struct(frozen=True)
 class DDPMSchedule:
     """A schedule for a DDPM model. Implements https://arxiv.org/abs/2006.11239. """
     betas: jax.Array

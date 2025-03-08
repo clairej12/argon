@@ -5,15 +5,29 @@ import argon.numpy as npx
 import argon.typing as atp
 import numpy as np
 
+import typing as tp
+
+from pathlib import Path
+
 from jax.tree_util import DictKey, GetAttrKey, SequenceKey
 
 def to_artifact(*, name, artifact_type, data) -> comet_ml.Artifact:
     artifact = comet_ml.Artifact(name, artifact_type)
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(delete=False) as tmpdir:
         zarr_path = f"{tmpdir}/data.zarr"
         argon.store.dump(data, argon.store.LocalStore(zarr_path))
-        artifact.add(zarr_path, "data.zarr", copy_to_tmp=False)
+        artifact.add(zarr_path, "data.zarr", copy_to_tmp=True)
     return artifact
+
+def from_artifact(artifact : comet_ml.Artifact) -> tp.Any:
+    directory : Path = Path("/tmp") / "comet_artifacts" / (artifact.name + "_" + str(artifact.version))
+    zarr_dir = directory / "data.zarr"
+    if not directory.exists() or not zarr_dir.exists():
+        directory.mkdir(parents=True, exist_ok=True)
+        artifact.download(directory)
+    if not zarr_dir.exists():
+        raise FileNotFoundError(f"Could not find data.zarr in {directory}")
+    return argon.store.load(argon.store.LocalStore(zarr_dir))
 
 def _key_to_str(key):
     if isinstance(key, DictKey):

@@ -10,6 +10,7 @@ from argon.graph import GraphLeaves
 from argon.data.normalizer import Normalizer, LinearNormalizer, StdNormalizer
 from argon import train
 
+import argon.models.mlp as mlp
 import argon.store.console
 import argon.store.comet
 import argon.tree
@@ -23,6 +24,7 @@ from argon.models.unet import UNet, ActivationDef
 
 from ml_collections import FrozenConfigDict, ConfigDict
 
+import jax.tree_util
 import typing as tp
 import chex
 import optax
@@ -80,6 +82,36 @@ class UNetDiffuser(tp.Generic[Action, Observation], nn.Module):
         actions_flat = self.unet(actions_flat, cond_embed)
         return actions_uf(actions_flat)
 
+class MlpDiffuser(nn.Module):
+    def __init__(self, observations_structure: Observation,
+                 actions_structure: Action, *, rngs: nn.Rngs):
+        self.actions_structure = actions_structure
+        self.observations_structure = observations_structure
+
+        actions_flat = argon.tree.ravel_pytree(
+            argon.tree.map(lambda x: npx.zeros_like(x), actions_structure)
+        )[0]
+        observations_flat = argon.tree.ravel_pytree(
+            argon.tree.map(lambda x: npx.zeros_like(x), observations_structure)
+        )[0]
+        self.mlp = mlp.MLP(
+            actions_flat.shape[0] + observations_flat.shape[0] + 1, 
+            actions_flat.shape[0], hidden_features=[32, 32, 32],
+            activation=nn.activations.gelu, rngs=rngs
+        )
+
+    @agt.jit
+    def __call__(self, observations, rng_key, actions, t):
+        chex.assert_trees_all_equal_shapes_and_dtypes(actions, self.actions_structure)
+        chex.assert_trees_all_equal_shapes_and_dtypes(observations, self.observations_structure)
+        actions_flat, actions_uf = argon.tree.ravel_pytree(actions)
+        observations_flat = argon.tree.ravel_pytree(observations)[0]
+
+        actions_flat = self.mlp(
+            npx.concatenate((actions_flat, observations_flat, t[None]), axis=0)
+        )
+        return actions_uf(actions_flat)
+
 @struct(frozen=True)
 class UNetConfig:
     @staticmethod
@@ -107,6 +139,32 @@ class UNetConfig:
         return argon.graph.merge(graphdef, model_state)
 
 @struct(frozen=True)
+class MlpConfig:
+    @staticmethod
+    def default_dict() -> ConfigDict:
+        return ConfigDict()
+
+    @staticmethod
+    def from_dict(config: FrozenConfigDict) -> tp.Self:
+        return MlpConfig()
+
+    def create_model(self, rng_key, obs_structure, action_structure) -> nn.Module:
+        rngs = nn.Rngs(rng_key)
+        model = MlpDiffuser(
+            obs_structure, action_structure,
+            rngs=rngs
+        )
+        return model
+    
+    def load_model(self, model_state : GraphLeaves, 
+                    obs_structure, action_structure) -> nn.Module:
+        abstract_model = agt.eval_shape(lambda: MlpDiffuser(
+            obs_structure, action_structure, rngs=nn.Rngs(42)
+        ))
+        graphdef, _ = argon.graph.split(abstract_model)
+        return argon.graph.merge(graphdef, model_state)
+
+@struct(frozen=True)
 class DiffusionPolicyTrainer(Method):
     model_config: ModelConfig
 
@@ -125,7 +183,8 @@ class DiffusionPolicyTrainer(Method):
     @staticmethod
     def default_dict() -> ConfigDict:
         cd = ConfigDict()
-        cd.unet_model = UNetConfig.default_dict()
+        cd.unet  = UNetConfig.default_dict()
+        cd.mlp = MlpConfig.default_dict()
         cd.model = "unet"
         cd.epochs = None
         cd.iterations = 10_000
@@ -133,7 +192,7 @@ class DiffusionPolicyTrainer(Method):
         cd.learning_rate = 3e-4
         cd.weight_decay = 1e-5
         cd.replica_noise = 0.
-        cd.diffusion_steps = 1000
+        cd.diffusion_steps = 32
         cd.action_horizon = 8
         cd.log_video = False
         return cd
@@ -141,7 +200,8 @@ class DiffusionPolicyTrainer(Method):
     @staticmethod
     def from_dict(config: FrozenConfigDict) -> tp.Self:
         match config.model:
-            case "unet": model_config = UNetConfig.from_dict(config.unet_model)
+            case "unet": model_config = UNetConfig.from_dict(config.unet)
+            case "mlp": model_config = MlpConfig.from_dict(config.mlp)
             case _: raise ValueError(f"Unknown model {config.model}")
         return DiffusionPolicyTrainer(
             model_config=model_config,
@@ -166,7 +226,8 @@ class DiffusionPolicyTrainer(Method):
 
         schedule = DDPMSchedule.make_squaredcos_cap_v2(
             self.diffusion_steps,
-            prediction_type="sample"
+            prediction_type="epsilon",
+            clip_sample_range=1.0,
         )
         obs_structure, action_structure = (
             argon.tree.structure(train_data[0].observations),
@@ -218,6 +279,11 @@ class DiffusionPolicyTrainer(Method):
 
         @agt.jit
         def loss_fn(model : nn.Module, rng_key, sample: Sample):
+            # re-build the schedule to get around issues with flax nnx
+            schedule = DDPMSchedule.make_squaredcos_cap_v2(
+                self.diffusion_steps,
+                prediction_type="sample"
+            )
             sample = normalizer.normalize(sample)
             actions, obs = sample.actions, sample.observations
             denoiser = lambda rng_key, noised_actions, t: model(
@@ -228,11 +294,11 @@ class DiffusionPolicyTrainer(Method):
                 loss=loss, metrics={"loss": loss}
             )
 
-        validate = agt.jit(
-            lambda model: inputs.validate(
-                val_rng, make_checkpoint(model).create_policy()
-            )
-        )
+        # validate = agt.jit(
+        #     lambda model: inputs.validate(
+        #         val_rng, make_checkpoint(model).create_policy()
+        #     )
+        # )
         for step in train.train_model(train_data.stream().batch(self.batch_size).shuffle(shuffle_rng), model, optimizer, loss_fn,
                                iterations=total_iterations, rng_key=train_rng):
             argon.store.comet.log(inputs.experiment, step.iteration, step.metrics)
@@ -241,7 +307,7 @@ class DiffusionPolicyTrainer(Method):
                 argon.store.console.log(step.iteration, step.sys_metrics, prefix="sys.")
         return make_checkpoint(model)
 
-@struct(frozen=True)
+@struct
 class DiffusionPolicy(Result):
     data: DataConfig # dataset this model was trained on
     observations_structure: Observation
@@ -255,25 +321,31 @@ class DiffusionPolicy(Result):
     action_normalizer: Normalizer
 
     def create_denoiser(self):
-        return lambda obs, rng_key, noised_actions, t: self.model(
-            obs, noised_actions, t - 1
-        )
+        return self.model_config.load_model(self.model_state, 
+            self.observations_structure, self.actions_structure)
 
     def create_policy(self) -> Policy:
         actions_structure = self.actions_structure
         observations_structure = self.observations_structure
         model = self.model_config.load_model(self.model_state, 
                     observations_structure, actions_structure)
-        def chunk_policy(input: PolicyInput) -> PolicyOutput:
+        action_horizon = self.action_horizon
+        def chunk_policy(self, model, input: PolicyInput) -> PolicyOutput:
             s_rng, n_rng = argon.random.split(input.rng_key)
             obs = input.observation
             obs = self.obs_normalizer.normalize(obs)
-            model_fn = agt.partial(model, obs)
-            action = self.schedule.sample(s_rng, model_fn, actions_structure)
+            def denoiser(model, obs, rng_key, actions, t):
+                obs = model(obs, rng_key, actions, t)
+                obs_flat, obs_uf = argon.tree.ravel_pytree(obs)
+                obs_flat = obs_flat.clip(-2, 2)
+                return obs_uf(obs_flat)
+            denoiser = agt.partial(denoiser, model, obs)
+            action = self.schedule.sample(s_rng, denoiser, actions_structure)
             action = self.action_normalizer.unnormalize(action)
-            action = argon.tree.map(lambda x: x[:self.action_horizon], action)
+            action = argon.tree.map(lambda x: x[:action_horizon], action)
             return PolicyOutput(action=action, info=action)
+        chunk_policy = agt.partial(chunk_policy, self, model)
         obs_horizon = argon.tree.axis_size(observations_structure, 0)
         return ChunkingTransform(
-            obs_horizon, self.action_horizon
+            obs_horizon, action_horizon
         ).apply(chunk_policy)

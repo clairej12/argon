@@ -14,6 +14,8 @@ from argon.struct import struct
 from argon.policy import Policy
 from argon.data import Data
 
+from .envs import lower_bounds as lower_bounds
+
 import typing as tp
 from ml_collections import ConfigDict
 
@@ -89,8 +91,9 @@ class DataConfig:
     def create_dataset(self) -> EnvDataset:
         datasets = DatasetRegistry[EnvDataset]()
         pusht_datasets.register(datasets)
+        lower_bounds.register_datasets(datasets)
         return datasets.create(self.dataset)
-    
+
     def load(self, dataset, splits=set()) -> tuple[Environment, dict[str, Data[Sample]]]:
         env = dataset.env(observation_type=self.observation_type)
         loaded_splits = {}

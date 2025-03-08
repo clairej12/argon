@@ -78,7 +78,6 @@ class Loop(Generic[Sample]):
             if self.show_epochs:
                 self.progress.reset(self.epoch_task, total=self.max_epochs)
                 self.progress.reset(self.epoch_iteration_task, total=self.epoch_iterations)
-
         iterations = 0
         rng = PRNGSequence(self.rng_key) if self.rng_key is not None else None
         try:

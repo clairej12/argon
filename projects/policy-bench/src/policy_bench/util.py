@@ -39,7 +39,10 @@ def setup_logging(show_path=False):
         jax_logger.removeHandler(jax_logger.handlers[0])
     logging.getLogger("jax._src.interpreters.pxla").setLevel(logging.WARNING)
     logging.getLogger("argon").setLevel(logging.INFO)
-
+    if rich.get_console().is_jupyter:
+        return rich.reconfigure(
+            force_jupyter=False,
+        )
     console = rich.get_console()
     handler = RichHandler(
         markup=True,
@@ -61,6 +64,7 @@ def setup_logging(show_path=False):
         datefmt="[%X]",
         handlers=[handler]
     )
+
 
 def _is_float(v):
     try:

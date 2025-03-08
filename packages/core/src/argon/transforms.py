@@ -17,6 +17,8 @@ import functools
 import dataclasses
 import jax
 
+import argon.numpy as npx
+
 from flax.typing import Missing
 from flax.nnx import extract, graph
 from flax.nnx.transforms.compilation import JitFn
@@ -134,12 +136,13 @@ def jit(
       (pure_args_out, pure_kwargs_out, pure_out), ctxtag='jit'
     )
     return out
-
+  jit_wrapper.__str__ = fun.__str__
+  jit_wrapper.__repr__ = fun.__repr__
   jit_wrapper.inner = jitted_fn  # type: ignore
   return jit_wrapper  # type: ignore
 
 
-@struct
+@struct(frozen=True)
 class Partial:
   func: tp.Any
   args: tp.Tuple | None
@@ -152,3 +155,41 @@ class Partial:
 
 def partial(func: F, *args, **kwargs) -> F:
   return Partial(func, args, kwargs)
+
+def map(func: F, batch_size: int, in_axes: tp.Any = 0, out_axes: tp.Any = 0) -> F:
+  vmapped = vmap(func, in_axes=in_axes, out_axes=out_axes)
+  @scan(in_axes=(Carry, in_axes))
+  def scan_fn(carry, inputs):
+    return carry, vmapped(*inputs)
+  @jit
+  def transformed(*args):
+    leaves, _ = argon.tree.flatten(argon.tree.map(
+      lambda axis, x: argon.tree.axis_size(x, axis) if axis is not None else None, 
+      in_axes, args, is_leaf=lambda x: x is None
+    ))
+    leaves = [x for x in leaves if x is not None]
+    N = leaves[0]
+    batches = N // batch_size
+    remainder = N - batches * batch_size
+    def reshape_inputs(axis, x):
+      if axis is None: return x
+      else:
+        return argon.tree.map(
+          lambda x: npx.reshape(npx.moveaxis(x, axis, 0)[:-remainder],
+                (batches, batch_size) + x.shape[1:]), x)
+    def reshape_remainder(axis, x):
+      if axis is None: return x
+      else:
+        return argon.tree.map(
+          lambda x: npx.moveaxis(x, axis, 0)[-remainder:], x)
+    bulk = argon.tree.map(reshape_inputs, in_axes, args, is_leaf=lambda x: x is None)
+    rest = argon.tree.map(reshape_remainder, in_axes, args, is_leaf=lambda x: x is None) if remainder > 0 else None
+
+    _, bulk_out = scan_fn(None, bulk)
+    rest_out = vmapped(*rest) if rest is not None else None
+    combined = argon.tree.map(
+      lambda x, y: npx.concatenate([
+        x.reshape(x.shape[0]*x.shape[1], *x.shape[2:]), y
+      ]), bulk_out, rest_out)
+    return combined
+  return transformed

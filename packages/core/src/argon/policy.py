@@ -94,9 +94,12 @@ def rollout(model : Model, state0 : State,
         length = length + 1
     if observe is None:
         observe = lambda x: x
-    
+    if policy is not None:
+        policy = agt.partial(policy)
+    elif model is not None:
+        model = agt.partial(model)
 
-    def scan_fn(comb_state, _):
+    def scan_fn(model, policy, comb_state):
         env_state, policy_state, policy_rng, model_rng = comb_state
         new_policy_rng, p_sk = jax.random.split(policy_rng) \
             if policy_rng is not None else (None, None)
@@ -119,11 +122,12 @@ def rollout(model : Model, state0 : State,
 
     # Do the first step manually to populate the policy state
     state = (state0, policy_init_state, policy_rng_key, model_rng_key)
-    new_state, first_output = scan_fn(state, None)
+    new_state, first_output = scan_fn(model, policy, state)
     # outputs is (xs, us, jacs) or (xs, us)
     (state_f, policy_state_f, 
-     policy_rng_f, model_rng_f), outputs = jax.lax.scan(scan_fn, new_state,
-                                    None, length=length-2)
+     policy_rng_f, model_rng_f), outputs = agt.scan(
+         scan_fn, length=length-2, in_axes=(None, None, agt.Carry)
+         )(model, policy, new_state)
     outputs = jax.tree.map(
         lambda a, b: npx.concatenate((npx.expand_dims(a,0), b)),
         first_output, outputs)
@@ -257,7 +261,7 @@ class ChunkingPolicy(Policy):
                     lambda x, y: npx.roll(x, -1, axis=0).at[-1,...].set(y), 
                     policy_state.input_chunk, input.observation
                 )
-        def reevaluate():
+        def reevaluate(self, policy_state, input):
             output = self.policy(PolicyInput(
                 obs_batch,
                 input.state,
@@ -275,7 +279,7 @@ class ChunkingPolicy(Policy):
                 policy_state=ChunkingPolicyState(obs_batch, output, 1),
                 info=output.info
             )
-        def index():
+        def index(self, policy_state, input):
             output = policy_state.last_batched_output
             action = output.action \
                 if self.action_chunk_size is None else \
@@ -294,9 +298,9 @@ class ChunkingPolicy(Policy):
             )
         if self.action_chunk_size is None \
                 or input.policy_state is None:
-            return reevaluate()
+            return reevaluate(self, policy_state, input)
         else:
             return agt.cond(
                 policy_state.t >= self.action_chunk_size,
-                reevaluate, index
+                reevaluate, index, self, policy_state, input
             )
