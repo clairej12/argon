@@ -8,7 +8,7 @@ import argon.random
 
 from argon.struct import struct
 from argon.registry import Registry
-from typing import Optional
+from typing import Optional, Any
 
 State = typing.TypeVar("State")
 ReducedState = typing.TypeVar("ReducedState")
@@ -54,6 +54,9 @@ class Environment(typing.Generic[State, ReducedState, Action, Observation], abc.
     @abc.abstractmethod
     def cost(self, states: State, actions: Action) -> atyp.Array: ...
 
+    @abc.abstractmethod
+    def visualize(self, states: State, actions: Action | None = None, **kwargs) -> Any: ...
+
 @struct(frozen=True)
 class EnvWrapper(Environment[State, ReducedState, Action, Observation]):
     base: Environment[State, ReducedState, Action, Observation]
@@ -85,6 +88,8 @@ class EnvWrapper(Environment[State, ReducedState, Action, Observation]):
         return self.base.cost(states, actions)
     def is_finished(self, state: State) -> atyp.Array:
         return self.base.is_finished(state)
+    def visualize(self, states: State, actions: Action | None = None, **kwargs) -> Any:
+        return self.base.visualize(states, actions, **kwargs)
 
     def __getattr__(self, name):
         return getattr(self.base, name)
@@ -155,6 +160,7 @@ class MultiStepTransform(EnvTransform):
     def apply(self, env):
         return MultiStepEnv(env, self.steps)
 
+
 @struct(frozen=True)
 class MultiStepEnv(EnvWrapper):
     steps: int = 1
@@ -168,3 +174,12 @@ class MultiStepEnv(EnvWrapper):
             return state, None
         state, _ = agt.scan(step_fn, length=self.steps)(state, keys)
         return state
+
+    def visualize(self, states, actions = None, *, 
+                    type: str = "html", dt=None, **kwargs) -> str:
+        if dt is None: dt = 1
+        return self.base.visualize(states, actions,
+            type=type,
+            dt=self.steps*dt,
+            **kwargs
+        )

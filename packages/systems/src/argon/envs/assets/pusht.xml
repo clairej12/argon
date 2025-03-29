@@ -26,6 +26,7 @@
     <geom pos="{half_world_scale} 0 0" size="{world_scale} {world_scale} 0.1"   xyaxes="0 0 1 0 1 0" type="plane"/>
     <geom pos="0 -{half_world_scale} 0" size="{world_scale} {world_scale} 0.1"  xyaxes="0 0 1 1 0 0" type="plane"/>
     <geom pos="0 {half_world_scale} 0" size="{world_scale} {world_scale} 0.1"   xyaxes="1 0 0 0 0 1" type="plane"/>
+    {extra}
 </worldbody>
 <actuator>
     <motor ctrllimited="true" ctrlrange="-10.0 10.0" gear="1.0" joint="agent_x"/>

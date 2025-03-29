@@ -97,26 +97,13 @@ def policy_rollout(env, T, x0, rng_key, policy):
     return rollout, reward
 
 @agt.jit
-def render_video(env, render_width, 
-                render_height, rollout):
-    states = rollout.states
-    actions = rollout.info
-    return agt.vmap(env.render)(states, ImageActionsRender(
-        render_width, render_height,
-        actions=actions
-    ))
-
-@agt.jit
 def validate(env, T,
              x0s, rng_key, policy) -> atyp.Array:
     rollout_fn = partial(policy_rollout, env, T, policy=policy) 
-    # render_fn = partial(render_video, env, 
-    #     render_width, render_height
-    # )
     N = argon.tree.axis_size(x0s, 0)
     rngs = argon.random.split(rng_key, N)
     rollouts, rewards = agt.vmap(rollout_fn)(x0s, rngs)
-    return rewards
+    return rollouts, rewards
 
 def run():
     setup_logging()
@@ -173,7 +160,7 @@ def run():
         experiment.log_artifact(artifact)
         logger.info("Running validation for final policy...")
         final_policy = final_result.create_policy()
-        rewards = validate_fn(eval_key, final_policy)
+        _, rewards = validate_fn(eval_key, final_policy)
         mean_reward = npx.mean(rewards)
         std_reward = npx.std(rewards)
         q = npx.array([0, 10, 25, 50, 75, 90, 100])

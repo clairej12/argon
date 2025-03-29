@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Visualizer</title>
+  </head>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+    }
+    #viewer {
+      height: 100vh;
+      margin: 0;
+      padding: 0;
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        {{ import_map }}
+      }
+    }
+  </script>
+  <body>
+    <div id="viewer"></div>
+    <script src="{{ pako_src }}"></script>
+    <script type="application/javascript">
+      var system = "{{ system_json_b64 }}";
+      // decode base64 (convert ascii to binary)
+      system = atob(system);
+      // convert binary string to character-number array
+      system = system.split('').map(function(x){return x.charCodeAt(0);});
+      // decompress
+      system = pako.inflate(system);
+      // convert gunzipped byteArray back to ascii string
+      system = new TextDecoder("utf-8").decode(system);
+      // and load json
+      system = JSON.parse(system);
+    </script>
+    <script type="module">
+      import {Viewer} from 'viewer';
+      var domElement = document.getElementById("viewer");
+      var viewer = new Viewer(domElement, system);
+    </script>
+  </body>
+</html>

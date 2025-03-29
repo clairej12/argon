@@ -14,7 +14,9 @@ import argon.typing as atp
 
 import importlib.resources as resources
 import mujoco
+import mujoco.mjx as mjx
 import shapely.geometry as sg
+import numpy as np
 
 
 @struct(frozen=True)
@@ -76,7 +78,7 @@ class PushTEnv(MujocoEnvironment):
     block_scale : float = 30 /252
     world_scale : float = 2
 
-    def load_xml(self):
+    def load_xml(self, extra=""):
         with (resources.files(assets) / "pusht.xml").open("r") as f:
             xml = f.read()
         com = 0.5*(self.block_scale/2) + 0.5*(self.block_scale + 1.5*self.block_scale)
@@ -90,7 +92,8 @@ class PushTEnv(MujocoEnvironment):
             double_block_scale=2*self.block_scale,
             one_and_half_block_scale=1.5*self.block_scale,
             two_and_half_block_scale=2.5*self.block_scale,
-            com_offset=com
+            com_offset=com,
+            extra=extra
         )
     
     def load_model(self) -> mujoco.MjModel:
@@ -203,7 +206,7 @@ class PushTEnv(MujocoEnvironment):
     def reward(self, state : MujocoState, 
                 action : PushTAction, 
                 next_state : MujocoState):
-        obs = self.observe(next_state)
+        obs = self.observe(next_state, config=FullObsConfig())
         goal_points = self._block_points(self.goal_pos, self.goal_rot)
         points = self._block_points(obs.block_pos, obs.block_rot)
         overlap = util.polygon_overlap(goal_points, points)
@@ -223,21 +226,51 @@ class PushTEnv(MujocoEnvironment):
     def cost(self, states, actions):
         return -self.trajectory_reward(states, actions)
 
-        
+    def visualize(self, states: MujocoState, actions = None, *, 
+                    action_chunks= None,
+                    type: str = "html", dt=None,
+                    extras_geoms: dict = {}, **kwargs) -> str:
+        if action_chunks is not None:
+            agent_pos = action_chunks.agent_pos
+            chunk_length = agent_pos.shape[-2]
+            states = states.replace(
+                xpos=npx.concatenate([states.xpos,
+                    npx.concatenate([
+                        agent_pos, npx.zeros(agent_pos.shape[:-1] + (1,))
+                    ], axis=-1)], axis=-2),
+                xquat=npx.concatenate([
+                    states.xquat,
+                    npx.zeros(agent_pos.shape[:-1] + (4,))
+                ], axis=-2)
+            )
+        else:
+            chunk_length = 0
+        return super().visualize(states, actions, 
+            type=type,
+            dt=dt, extras_geoms={
+                f"action_{i}" : [{
+                    "name": "Sphere",
+                    "pos": np.zeros((3,)),
+                    "rot": np.zeros((4,)),
+                    "rgba": np.array((i/chunk_length, 0, 0, 1)),
+                    "size": [self.agent_radius/4, 0.0, 0.0]
+                }] for i in range(chunk_length)
+            }, **kwargs)
+
 # A state-feedback adapter for the PushT environment
 # Will run a PID controller under the hood
 @struct(frozen=True)
 class PositionControlTransform(EnvTransform):
-    k_p : float = 15
-    k_v : float = 2
+    k_p : float = 10
+    k_v : float = 1
     
     def apply(self, env):
         return PositionControlEnv(env, self.k_p, self.k_v)
 
 @struct(frozen=True)
 class PositionControlEnv(EnvWrapper):
-    k_p : float = 50
-    k_v : float = 2
+    k_p : float = 10
+    k_v : float = 1
 
     def sample_action(self, rng_key):
         return super().sample_action(rng_key)

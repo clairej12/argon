@@ -174,22 +174,33 @@ def map(func: F, batch_size: int, in_axes: tp.Any = 0, out_axes: tp.Any = 0) -> 
     def reshape_inputs(axis, x):
       if axis is None: return x
       else:
-        return argon.tree.map(
-          lambda x: npx.reshape(npx.moveaxis(x, axis, 0)[:-remainder],
-                (batches, batch_size) + x.shape[1:]), x)
+        if remainder == 0:
+          return argon.tree.map(
+            lambda x: npx.reshape(npx.moveaxis(x, axis, 0),
+                  (batches, batch_size) + x.shape[1:]), x)
+        else:
+          return argon.tree.map(
+            lambda x: npx.reshape(npx.moveaxis(x, axis, 0)[:-remainder],
+                  (batches, batch_size) + x.shape[1:]), x)
     def reshape_remainder(axis, x):
       if axis is None: return x
       else:
         return argon.tree.map(
           lambda x: npx.moveaxis(x, axis, 0)[-remainder:], x)
-    bulk = argon.tree.map(reshape_inputs, in_axes, args, is_leaf=lambda x: x is None)
+    bulk = argon.tree.map(reshape_inputs, in_axes, args, is_leaf=lambda x: x is None) if batches > 0 else None
     rest = argon.tree.map(reshape_remainder, in_axes, args, is_leaf=lambda x: x is None) if remainder > 0 else None
-
-    _, bulk_out = scan_fn(None, bulk)
+    _, bulk_out = scan_fn(None, bulk) if bulk is not None else (None, None)
     rest_out = vmapped(*rest) if rest is not None else None
-    combined = argon.tree.map(
-      lambda x, y: npx.concatenate([
-        x.reshape(x.shape[0]*x.shape[1], *x.shape[2:]), y
-      ]), bulk_out, rest_out)
-    return combined
+    if bulk_out is None:
+      return rest_out
+    elif rest_out is None:
+      return argon.tree.map(
+        lambda x: npx.reshape(x, (N,) + x.shape[2:]), bulk_out
+      )
+    else:
+      combined = argon.tree.map(
+        lambda x, y: npx.concatenate([
+          x.reshape(x.shape[0]*x.shape[1], *x.shape[2:]), y
+        ]), bulk_out, rest_out)
+      return combined
   return transformed

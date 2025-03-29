@@ -146,6 +146,9 @@ class EmbedEnvironment(Environment):
 
     def cost(self, states, actions):
         return -self.trajectory_reward(states, actions)
+    
+    def visualize(self, states, actions = None, **kwargs):
+        raise NotImplementedError()
 
 @struct
 class EmbedExpert(Policy):

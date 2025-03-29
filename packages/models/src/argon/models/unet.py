@@ -96,10 +96,9 @@ class UNet(nn.Module):
             blocks_per_level = (blocks_per_level,) * len(channel_mults)
         else:
             assert len(blocks_per_level) == len(channel_mults)
-
         ResBlock = functools.partial(ResNetBlock,
                     kernel_size=kernel_size, dropout=dropout, cond_features=embed_features,
-                    activation=activation, conv=conv, norm=norm, rngs=rngs)
+                    use_film=use_film, activation=activation, conv=conv, norm=norm, rngs=rngs)
         AttenBlock = functools.partial(AttentionBlock, spatial_dims=spatial_dims, rngs=rngs)
 
         self.embed = embed

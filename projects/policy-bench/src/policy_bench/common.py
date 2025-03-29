@@ -3,6 +3,7 @@ import argon.numpy as npx
 import argon.typing as atyp
 import argon.tree
 
+from argon.policy import Rollout
 from argon.random import PRNGSequence
 from argon.envs.common import Environment, ObservationConfig
 
@@ -29,6 +30,7 @@ class Sample:
     state: tp.Any
     observations: atyp.Array
     actions: atyp.Array
+    rel_actions: atyp.Array
 
 @struct(frozen=True)
 class DataConfig:
@@ -48,7 +50,7 @@ class DataConfig:
         cd.action_length = 8
         cd.obs_length = 1
         cd.dataset = "pusht/chi"
-        cd.observation_type = None
+        cd.observation_type = "keypoint"
         cd.train_trajectories = None
         cd.test_trajectories = None
         cd.validation_trajectories = None
@@ -77,22 +79,45 @@ class DataConfig:
         )
         @agt.jit
         def process_chunk(chunk):
+            from argon.envs.pusht import PushTAgentPos
             states, actions = chunk.elements
             actions = argon.tree.map(lambda x: x[-self.action_length:], actions)
             obs_states = argon.tree.map(lambda x: x[:self.obs_length], states)
             curr_state = argon.tree.map(lambda x: x[-1], obs_states)
+            last_obs = env.observe(curr_state)
             obs = agt.vmap(env.observe)(obs_states)
+            actions_relative = agt.vmap(
+                lambda actions: self.relative_action(last_obs, actions), 
+            )(actions)
             return Sample(
-                curr_state, obs, actions
+                curr_state, obs, actions,
+                actions_relative
             )
         data = data.map(process_chunk)
         return data
-    
+
     def create_dataset(self) -> EnvDataset:
         datasets = DatasetRegistry[EnvDataset]()
         pusht_datasets.register(datasets)
         lower_bounds.register_datasets(datasets)
         return datasets.create(self.dataset)
+    
+    @agt.jit
+    def relative_action(self, obs, action):
+        if self.dataset == "pusht/chi":
+            from argon.envs.pusht import PushTAgentPos
+            relative = action.agent_pos - obs.agent_pos
+            return PushTAgentPos(relative)
+        else:
+            raise NotImplementedError()
+    @agt.jit
+    def absolute_action(self, obs, rel_action):
+        if self.dataset == "pusht/chi":
+            from argon.envs.pusht import PushTAgentPos
+            absolute = rel_action.agent_pos + obs.agent_pos
+            return PushTAgentPos(absolute)
+        else:
+            raise NotImplementedError()
 
     def load(self, dataset, splits=set()) -> tuple[Environment, dict[str, Data[Sample]]]:
         env = dataset.env(observation_type=self.observation_type)
@@ -131,7 +156,7 @@ class Inputs:
     env: Environment
     dataset: EnvDataset
 
-    validate : tp.Callable[[atyp.Array, Policy], atyp.Array]
+    validate : tp.Callable[[atyp.Array, Policy], tuple[Rollout, atyp.Array]]
 
     data : DataConfig
 

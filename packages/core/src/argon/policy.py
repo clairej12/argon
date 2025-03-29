@@ -243,6 +243,7 @@ class ChunkingPolicy(Policy):
             if self.action_chunk_size is not None else \
                 self.policy.rollout_length
             
+    @agt.jit
     def __call__(self, input):
         policy_state = input.policy_state
         if policy_state is None:

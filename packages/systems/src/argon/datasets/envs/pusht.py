@@ -38,7 +38,7 @@ class PushTDataset(EnvDataset[Step, PushTEnv]):
         env = PushTEnv(default_observation=obs_config)
         env = ChainedTransform([
             PositionControlTransform(),
-            MultiStepTransform(20),
+            MultiStepTransform(10),
         ]).apply(env)
         return env
 
@@ -85,11 +85,22 @@ def load_pytorch_pusht_data(zarr_path, max_trajectories=None):
     @jax.vmap
     def convert_actions(action):
         return PushTAgentPos(action / 256 - 1)
+
+    states = convert_states(jnp.array(data["state"][:last_end], dtype=jnp.float32))
+    # actions = convert_actions(jnp.array(data["action"][:last_end], dtype=jnp.float32))
+    # get the next block position and use that for the action
+    positions = states.qpos[:, :2]
+    # make the action 2 states ahead
+    actions = jnp.concatenate([positions[1:], positions[-1][None]])
+    # set the last action to the last position for each the sequence
+    actions.at[infos.end_idx-1].set(positions[infos.end_idx - 1])
+    actions = PushTAgentPos(actions)
+
     steps = Step(
         state=None,
-        reduced_state=convert_states(jnp.array(data["state"][:last_end], dtype=jnp.float32)),
+        reduced_state=states,
         observation=None,
-        action=convert_actions(jnp.array(data["action"][:last_end], dtype=jnp.float32))
+        action=actions
     )
     return SequenceData(PyTreeData(steps), PyTreeData(infos))
 
