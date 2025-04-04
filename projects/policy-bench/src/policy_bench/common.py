@@ -109,7 +109,8 @@ class DataConfig:
             relative = action.agent_pos - obs.agent_pos
             return PushTAgentPos(relative)
         else:
-            raise NotImplementedError()
+            return action
+
     @agt.jit
     def absolute_action(self, obs, rel_action):
         if self.dataset == "pusht/chi":
@@ -117,7 +118,7 @@ class DataConfig:
             absolute = rel_action.agent_pos + obs.agent_pos
             return PushTAgentPos(absolute)
         else:
-            raise NotImplementedError()
+            return rel_action
 
     def load(self, dataset, splits=set()) -> tuple[Environment, dict[str, Data[Sample]]]:
         env = dataset.env(observation_type=self.observation_type)

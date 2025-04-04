@@ -18,7 +18,7 @@ import jax
 from typing import Any, Sequence
 from functools import partial
 
-def make_challenging_pair(mu=1/8):
+def make_challenging_pair(mu=1/4):
     c_mu = 3/2*mu
     A_1 = npx.array([
         [1+mu, c_mu],
@@ -79,6 +79,9 @@ class EmbedEnvironment(Environment):
     @staticmethod
     def create_model():
         return PerturbationModel([16, 16])
+    
+    def create_expert(self):
+        return EmbedExpert(self.K, self.vars, self.tau, self.bump)
 
     def sample_state(self, rng_key):
         return npx.zeros((2 + self.d,))
@@ -146,6 +149,9 @@ class EmbedEnvironment(Environment):
 
     def cost(self, states, actions):
         return -self.trajectory_reward(states, actions)
+    
+    def relative_action(self, state, action):
+        return action
     
     def visualize(self, states, actions = None, **kwargs):
         raise NotImplementedError()

@@ -98,10 +98,11 @@ class MlpDiffuser(nn.Module):
         observations_flat = argon.tree.ravel_pytree(
             argon.tree.map(lambda x: npx.zeros_like(x), observations_structure)
         )[0]
+        self.time_embed = SinusoidalPosEmbed(32)
         self.mlp = mlp.MLP(
-            actions_flat.shape[0] + observations_flat.shape[0] + 1, 
-            actions_flat.shape[0], hidden_features=[32, 32, 32],
-            activation=nn.activations.gelu, rngs=rngs
+            actions_flat.shape[0] + observations_flat.shape[0] + 32, 
+            actions_flat.shape[0], hidden_features=[64, 64, 64],
+            activation=nn.activations.relu, rngs=rngs
         )
 
     @agt.jit
@@ -111,8 +112,9 @@ class MlpDiffuser(nn.Module):
         actions_flat, actions_uf = argon.tree.ravel_pytree(actions)
         observations_flat = argon.tree.ravel_pytree(observations)[0]
 
+        t_cond = self.time_embed(t)
         actions_flat = self.mlp(
-            npx.concatenate((actions_flat, observations_flat, t[None]), axis=0)
+            npx.concatenate((actions_flat, observations_flat, t_cond), axis=0)
         )
         return actions_uf(actions_flat)
 
@@ -195,6 +197,8 @@ class DiffusionPolicyTrainer(Method):
     action_horizon: int
     relative_action: bool
 
+    log_video: bool = False
+
     @staticmethod
     def default_dict() -> ConfigDict:
         cd = ConfigDict()
@@ -211,6 +215,7 @@ class DiffusionPolicyTrainer(Method):
         cd.diffusion_steps = 32
         cd.action_horizon = 8
         cd.relative_action = True
+        cd.log_video = False
         return cd
 
     @staticmethod
@@ -231,6 +236,7 @@ class DiffusionPolicyTrainer(Method):
             diffusion_steps=config.diffusion_steps,
             action_horizon=config.action_horizon,
             relative_action=config.relative_action,
+            log_video=config.log_video
         )
 
     def run(self, inputs: Inputs):
@@ -326,10 +332,11 @@ class DiffusionPolicyTrainer(Method):
             if step.iteration % 5000 == 0:
                 step.realize()
                 rollouts, rewards = validate(model)
-                html = inputs.env.visualize(rollouts.states,
-                        action_chunks=rollouts.info,
-                        type="html")
-                inputs.experiment.log_html(html)
+                if self.log_video:
+                    html = inputs.env.visualize(rollouts.states,
+                            action_chunks=rollouts.info,
+                            type="html")
+                    inputs.experiment.log_html(html)
                 metrics = {
                     "reward_mean": npx.mean(rewards),
                     "reward_median": npx.median(rewards),
