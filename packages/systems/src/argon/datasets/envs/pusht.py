@@ -21,6 +21,8 @@ import argon.numpy as jnp
 import zarr
 import zarr.storage
 
+import pdb
+
 @struct(frozen=True)
 class PushTDataset(EnvDataset[Step, PushTEnv]):
     _splits : dict[str, SequenceData[Step, None]]
@@ -43,9 +45,11 @@ class PushTDataset(EnvDataset[Step, PushTEnv]):
         return env
 
 def load_pytorch_pusht_data(zarr_path, max_trajectories=None):
-    store = zarr.storage.ZipStore(zarr_path, mode="r")
-    meta = zarr.open(store, path="/meta", mode="r", zarr_format=2)
-    data = zarr.open(store, path="/data", mode="r", zarr_format=2)
+    meta = zarr.open(str(zarr_path + "/meta"), mode="r", zarr_format=2)
+    data = zarr.open(str(zarr_path + "/data"), mode="r", zarr_format=2)
+    # store = zarr.storage.ZipStore(zarr_path, mode="r")
+    # meta = zarr.open(store, path="/meta", mode="r", zarr_format=2)
+    # data = zarr.open(store, path="/data", mode="r", zarr_format=2)
     if max_trajectories is None:
         max_trajectories = meta["episode_ends"].shape[0]
     ends = jnp.array(meta["episode_ends"][:max_trajectories], dtype=idx_dtype)
@@ -105,19 +109,20 @@ def load_pytorch_pusht_data(zarr_path, max_trajectories=None):
     return SequenceData(PyTreeData(steps), PyTreeData(infos))
 
 def load_chi_pusht_data(max_trajectories=None, quiet=False):
-    zip_path = cache_path("pusht", "pusht_data_raw.zarr.zip")
-    processed_path = cache_path("pusht", "pusht_data.zarr.zip")
+    zip_path = cache_path("argon", "pusht_data_raw.zarr.zip")
+    processed_path = cache_path("argon", "pusht_data.zarr")
     if not processed_path.exists():
-        download(zip_path,
-            job_name="PushT (Diffusion Policy Data)",
-            gdrive_id="1ALI_Ua7U1EJRCAim5tvtQUJbBP5MGMyR",
-            md5="48a64828d7f2e1e8902a97b57ebd0bdd",
-            quiet=quiet
-        )
-        data = load_pytorch_pusht_data(zip_path, max_trajectories)
-        argon.store.dump(data, processed_path)
-        # remove the raw data
-        zip_path.unlink()
+        print(f"Cannot find processed pusht data at {processed_path}.")
+        # download(zip_path,
+        #     job_name="PushT (Diffusion Policy Data)",
+        #     gdrive_id="1ALI_Ua7U1EJRCAim5tvtQUJbBP5MGMyR",
+        #     md5="48a64828d7f2e1e8902a97b57ebd0bdd",
+        #     quiet=quiet
+        # )
+        # data = load_pytorch_pusht_data(zip_path, max_trajectories)
+        # argon.store.dump(data, processed_path)
+        # # remove the raw data
+        # zip_path.unlink()
     data = argon.store.load(processed_path)
     return data
 

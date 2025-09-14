@@ -19,7 +19,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Downloading and extracting utilities...
-_DATA = Path(os.environ["HOME"]) / ".cache" / "argon_datasets"
+_DATA = Path(os.environ["HOME"]) / "claireji" / "mode-collapse" # Path(os.environ["HOME"]) / ".cache" / "argon_datasets"
 
 def cache_path(key, filename=None):
     path = _DATA / key 

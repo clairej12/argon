@@ -15,6 +15,8 @@ import zarr
 import jaxlib
 from zarr.storage import StorePath, StoreLike, LocalStore
 
+import pdb
+
 def _type_to_identifier(tp: typ.Type) -> str:
     if tp is None or tp == type(None):
         return "none"
@@ -201,6 +203,7 @@ def load(store : StoreLike, *,
         path=path,
         storage_options=storage_options
     )
+
     graphdef = _unpack_graphdef(group.attrs["graphdef"])
 
     def _unflatten_state(group):
